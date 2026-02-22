@@ -1,0 +1,17 @@
+{
+  "itemGroup.ae2craftinglens": "AE2 合成透镜",
+  "block.ae2craftinglens.example_block": "示例方块",
+  "item.ae2craftinglens.example_item": "示例物品",
+
+  "ae2craftinglens.configuration.title": "AE2 合成透镜配置",
+  "ae2craftinglens.configuration.section.ae2craftinglens.common.toml": "AE2 合成透镜配置",
+  "ae2craftinglens.configuration.section.ae2craftinglens.common.toml.title": "AE2 合成透镜配置",
+  "ae2craftinglens.configuration.items": "物品列表",
+  "ae2craftinglens.configuration.logDirtBlock": "记录泥土方块",
+  "ae2craftinglens.configuration.magicNumberIntroduction": "魔法数字文本",
+  "ae2craftinglens.configuration.magicNumber": "魔法数字",
+  
+  "message.ae2craftinglens.highlighted_providers": "正在高亮 %d 个样板供应器，持续 12 秒",
+  "message.ae2craftinglens.no_providers_found": "未找到该物品的样板供应器",
+  "tooltip.ae2craftinglens.shift_to_highlight": "按住 Shift 点击高亮样板供应器"
+}

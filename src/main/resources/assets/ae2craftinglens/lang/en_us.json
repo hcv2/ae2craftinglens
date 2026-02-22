@@ -1,0 +1,17 @@
+{
+  "itemGroup.ae2craftinglens": "AE2 Crafting Lens",
+  "block.ae2craftinglens.example_block": "Example Block",
+  "item.ae2craftinglens.example_item": "Example Item",
+
+  "ae2craftinglens.configuration.title": "AE2 Crafting Lens Configs",
+  "ae2craftinglens.configuration.section.ae2craftinglens.common.toml": "AE2 Crafting Lens Configs",
+  "ae2craftinglens.configuration.section.ae2craftinglens.common.toml.title": "AE2 Crafting Lens Configs",
+  "ae2craftinglens.configuration.items": "Item List",
+  "ae2craftinglens.configuration.logDirtBlock": "Log Dirt Block",
+  "ae2craftinglens.configuration.magicNumberIntroduction": "Magic Number Text",
+  "ae2craftinglens.configuration.magicNumber": "Magic Number",
+  
+  "message.ae2craftinglens.highlighted_providers": "Highlighting %d pattern providers for 12 seconds",
+  "message.ae2craftinglens.no_providers_found": "No pattern providers found for this item",
+  "tooltip.ae2craftinglens.shift_to_highlight": "Shift-click to highlight pattern providers"
+}
