@@ -168,34 +168,72 @@ public class PatternProviderRequestHandler {
             String providerClassName = provider.getClass().getName();
             AE2CraftingLens.LOGGER.debug("Provider class: {}", providerClassName);
             
+            // 方法1: 尝试找到 PatternProviderLogicHost 或 PatternProviderBlockEntity
             Object host = findFieldByTypeName(provider, "PatternProviderLogicHost");
             if (host == null) {
                 host = findFieldByTypeName(provider, "PatternProviderBlockEntity");
             }
             
+            // 方法2: 尝试找到 host 字段（适用于 PartExPatternProvider）
+            if (host == null) {
+                try {
+                    Method getHostMethod = provider.getClass().getMethod("getHost");
+                    host = getHostMethod.invoke(provider);
+                    if (host != null) {
+                        AE2CraftingLens.LOGGER.debug("Found host via getHost() method");
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error calling getHost() method: {}", e.getMessage());
+                }
+            }
+            
             if (host != null) {
+                // 尝试从 host 获取 blockEntity
                 Object blockEntity = invokeMethod(host, "getBlockEntity", Object.class);
                 if (blockEntity == null) {
+                    // 尝试从 host 获取位置直接
+                    BlockPos pos = invokeMethod(host, "getBlockPos", BlockPos.class);
+                    if (pos != null) {
+                        AE2CraftingLens.LOGGER.debug("Found position directly from host: {}", pos);
+                        return pos;
+                    }
                     blockEntity = host;
                 }
                 
                 BlockPos pos = invokeMethod(blockEntity, "getBlockPos", BlockPos.class);
                 if (pos != null) {
+                    AE2CraftingLens.LOGGER.debug("Found position from blockEntity: {}", pos);
                     return pos;
                 }
             }
             
+            // 方法3: 直接在 provider 上查找 getBlockPos 方法
             for (Method method : provider.getClass().getMethods()) {
                 if (method.getName().equals("getBlockPos") && method.getParameterCount() == 0) {
                     try {
                         Object result = method.invoke(provider);
                         if (result instanceof BlockPos) {
+                            AE2CraftingLens.LOGGER.debug("Found position via getBlockPos() method: {}", result);
                             return (BlockPos) result;
                         }
                     } catch (Exception e) {
-                        // ignore
+                        AE2CraftingLens.LOGGER.debug("Error calling getBlockPos() method: {}", e.getMessage());
                     }
                 }
+            }
+            
+            // 方法4: 尝试从 provider 的父类或其他字段获取位置
+            try {
+                Object part = findFieldByTypeName(provider, "Part");
+                if (part != null) {
+                    BlockPos pos = invokeMethod(part, "getBlockPos", BlockPos.class);
+                    if (pos != null) {
+                        AE2CraftingLens.LOGGER.debug("Found position from part: {}", pos);
+                        return pos;
+                    }
+                }
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Error getting position from part: {}", e.getMessage());
             }
             
         } catch (Exception e) {
