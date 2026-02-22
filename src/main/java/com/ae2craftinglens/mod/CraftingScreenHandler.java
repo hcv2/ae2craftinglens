@@ -169,6 +169,8 @@ public class CraftingScreenHandler {
                             AE2CraftingLens.LOGGER.debug("Sending RequestPatternProvidersPacket for: {}", aeKey);
                             PacketDistributor.sendToServer(packet);
                             event.setCanceled(true);
+                            AE2CraftingLens.LOGGER.debug("Event canceled to prevent additional actions");
+                            return;
                         }
                     } catch (ClassNotFoundException e) {
                         AE2CraftingLens.LOGGER.error("AEKey class not found", e);
