@@ -93,9 +93,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 欢迎提交 Issue 和 Pull Request 来帮助改进这个模组！
 
 Contributions are welcome! Feel free to submit Issues and Pull Requests to help improve this mod.
-
-## 联系方式 | Contact
-
-- **GitHub**：[hcv2/ae2craftinglens](https://github.com/hcv2/ae2craftinglens)
-
-- **GitHub**：[hcv2/ae2craftinglens](https://github.com/hcv2/ae2craftinglens)
