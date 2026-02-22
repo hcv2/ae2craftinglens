@@ -12,26 +12,19 @@ public class NetworkHandler {
         modEventBus.addListener(NetworkHandler::registerPayloads);
     }
     
+    @SuppressWarnings("null")
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(AE2CraftingLens.MODID);
         
-        @SuppressWarnings("null")
-        var requestType = RequestPatternProvidersPacket.TYPE;
-        @SuppressWarnings("null")
-        var requestCodec = RequestPatternProvidersPacket.STREAM_CODEC;
         registrar.playToServer(
-                requestType,
-                requestCodec,
+                RequestPatternProvidersPacket.TYPE,
+                RequestPatternProvidersPacket.STREAM_CODEC,
                 RequestPatternProvidersPacket::handle
         );
         
-        @SuppressWarnings("null")
-        var responseType = PatternProviderResponsePacket.TYPE;
-        @SuppressWarnings("null")
-        var responseCodec = PatternProviderResponsePacket.STREAM_CODEC;
         registrar.playToClient(
-                responseType,
-                responseCodec,
+                PatternProviderResponsePacket.TYPE,
+                PatternProviderResponsePacket.STREAM_CODEC,
                 PatternProviderResponsePacket::handle
         );
     }
