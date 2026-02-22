@@ -24,6 +24,7 @@ public class CraftingScreenHandler {
             }
             
             String screenClassName = screen.getClass().getName();
+            AE2CraftingLens.LOGGER.debug("Screen class: {}", screenClassName);
             
             // 检查是否是合成相关的屏幕，包括无线终端的情况
             if (!screenClassName.contains("Crafting") && !screenClassName.contains("crafting")) {
@@ -38,6 +39,7 @@ public class CraftingScreenHandler {
             // 检查是否按住Shift
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null) {
+                AE2CraftingLens.LOGGER.debug("Player is null, skipping");
                 return;
             }
             
@@ -64,12 +66,13 @@ public class CraftingScreenHandler {
                     try {
                         Method getItemMethod = hoveredSlot.getClass().getMethod("getItem");
                         hoveredStack = getItemMethod.invoke(hoveredSlot);
+                        AE2CraftingLens.LOGGER.debug("Found hoveredStack via hoveredSlot: {}", hoveredStack);
                     } catch (Exception e) {
-                        // 静默失败
+                        AE2CraftingLens.LOGGER.debug("Error getting item from hoveredSlot: {}", e.getMessage());
                     }
                 }
             } catch (Exception e) {
-                // 静默失败
+                AE2CraftingLens.LOGGER.debug("Error getting hoveredSlot: {}", e.getMessage());
             }
             
             // 方法2: 尝试使用getSlotAt方法
@@ -81,12 +84,13 @@ public class CraftingScreenHandler {
                         try {
                             Method getStackMethod = slot.getClass().getMethod("getItem");
                             hoveredStack = getStackMethod.invoke(slot);
+                            AE2CraftingLens.LOGGER.debug("Found hoveredStack via getSlotAt: {}", hoveredStack);
                         } catch (Exception e) {
-                            // 静默失败
+                            AE2CraftingLens.LOGGER.debug("Error getting item from slot: {}", e.getMessage());
                         }
                     }
                 } catch (Exception e) {
-                    // 静默失败
+                    AE2CraftingLens.LOGGER.debug("Error calling getSlotAt: {}", e.getMessage());
                 }
             }
             
@@ -99,6 +103,7 @@ public class CraftingScreenHandler {
                     Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
                     if (aeKeyClass.isInstance(hoveredStack)) {
                         aeKey = hoveredStack;
+                        AE2CraftingLens.LOGGER.debug("AEKey found directly: {}", aeKey);
                     }
                 } catch (ClassNotFoundException e) {
                     AE2CraftingLens.LOGGER.error("AEKey class not found", e);
@@ -113,12 +118,13 @@ public class CraftingScreenHandler {
                             try {
                                 Method whatMethod = stack.getClass().getMethod("what");
                                 aeKey = whatMethod.invoke(stack);
+                                AE2CraftingLens.LOGGER.debug("AEKey found via stack().what(): {}", aeKey);
                             } catch (Exception e) {
-                                // 静默失败
+                                AE2CraftingLens.LOGGER.debug("Error getting what() from stack: {}", e.getMessage());
                             }
                         }
                     } catch (Exception e) {
-                        // 静默失败
+                        AE2CraftingLens.LOGGER.debug("Error calling stack() method: {}", e.getMessage());
                     }
                 }
                 
@@ -127,8 +133,9 @@ public class CraftingScreenHandler {
                     try {
                         Method getTypeMethod = hoveredStack.getClass().getMethod("getType");
                         aeKey = getTypeMethod.invoke(hoveredStack);
+                        AE2CraftingLens.LOGGER.debug("AEKey found via getType(): {}", aeKey);
                     } catch (Exception e) {
-                        // 静默失败
+                        AE2CraftingLens.LOGGER.debug("Error calling getType() method: {}", e.getMessage());
                     }
                 }
                 
@@ -144,12 +151,13 @@ public class CraftingScreenHandler {
                                 Object keyHelper = getKeyMethod.invoke(null);
                                 Method ofItemMethod = keyHelper.getClass().getMethod("of", net.minecraft.world.item.ItemStack.class);
                                 aeKey = ofItemMethod.invoke(keyHelper, hoveredStack);
+                                AE2CraftingLens.LOGGER.debug("AEKey found via AEApi.key().of(): {}", aeKey);
                             } catch (Exception e) {
-                                // 静默失败
+                                AE2CraftingLens.LOGGER.debug("Error creating AEKey from ItemStack: {}", e.getMessage());
                             }
                         }
                     } catch (Exception e) {
-                        // 静默失败
+                        AE2CraftingLens.LOGGER.debug("Error calling getItem() method: {}", e.getMessage());
                     }
                 }
                 
@@ -158,13 +166,18 @@ public class CraftingScreenHandler {
                         Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
                         if (aeKeyClass.isInstance(aeKey)) {
                             RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey);
+                            AE2CraftingLens.LOGGER.debug("Sending RequestPatternProvidersPacket for: {}", aeKey);
                             PacketDistributor.sendToServer(packet);
                             event.setCanceled(true);
                         }
                     } catch (ClassNotFoundException e) {
                         AE2CraftingLens.LOGGER.error("AEKey class not found", e);
                     }
+                } else {
+                    AE2CraftingLens.LOGGER.debug("No AEKey found for hoveredStack: {}", hoveredStack);
                 }
+            } else {
+                AE2CraftingLens.LOGGER.debug("No hoveredStack found at mouse position: {}, {}", event.getMouseX(), event.getMouseY());
             }
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error handling mouse click", e);

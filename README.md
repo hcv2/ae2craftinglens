@@ -19,19 +19,7 @@ AE2 Crafting Lens is a Minecraft mod that adds useful crafting tracking function
 - **One-Click Teleport**：Click on dimension or coordinate text in chat to teleport directly to the provider
 - **Wireless Terminal Compatibility**：Fully compatible with AE2 wireless terminals and related mods
 - **Simple Operation**：Trigger highlighting by directly clicking on items in the crafting status page
-
-## 安装说明 | Installation
-
-1. **安装 NeoForge**：确保您的 Minecraft 客户端已安装 NeoForge 1.21.1 或更高版本
-2. **安装 Applied Energistics 2**：确保已安装 AE2 模组
-3. **安装 AE2 Crafting Lens**：将模组的 JAR 文件放入 `mods` 文件夹
-4. **启动游戏**：启动 Minecraft 客户端，模组会自动加载
-
-1. **Install NeoForge**：Ensure your Minecraft client has NeoForge 1.21.1 or higher installed
-2. **Install Applied Energistics 2**：Ensure AE2 mod is installed
-3. **Install AE2 Crafting Lens**：Place the mod JAR file into the `mods` folder
-4. **Start Game**：Launch Minecraft client, the mod will load automatically
-
+  
 ## 使用方法 | Usage
 
 1. **打开无线终端**：使用 AE2 无线终端或普通终端
@@ -93,9 +81,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 欢迎提交 Issue 和 Pull Request 来帮助改进这个模组！
 
 Contributions are welcome! Feel free to submit Issues and Pull Requests to help improve this mod.
-
-## 联系方式 | Contact
-
-- **GitHub**：[hcv2/ae2craftinglens](https://github.com/hcv2/ae2craftinglens)
-
-- **GitHub**：[hcv2/ae2craftinglens](https://github.com/hcv2/ae2craftinglens)

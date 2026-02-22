@@ -23,16 +23,26 @@ public record RequestPatternProvidersPacket(Object what) implements CustomPacket
     
     private static void encode(RegistryFriendlyByteBuf buffer, RequestPatternProvidersPacket packet) {
         try {
+            if (packet.what == null) {
+                buffer.writeBoolean(false);
+                return;
+            }
+            buffer.writeBoolean(true);
             Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
             Method writeKeyMethod = aeKeyClass.getMethod("writeKey", RegistryFriendlyByteBuf.class, aeKeyClass);
             writeKeyMethod.invoke(null, buffer, packet.what);
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error encoding AEKey", e);
+            buffer.writeBoolean(false);
         }
     }
     
     private static RequestPatternProvidersPacket decode(RegistryFriendlyByteBuf buffer) {
         try {
+            boolean hasKey = buffer.readBoolean();
+            if (!hasKey) {
+                return new RequestPatternProvidersPacket(null);
+            }
             Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
             Method readKeyMethod = aeKeyClass.getMethod("readKey", RegistryFriendlyByteBuf.class);
             Object what = readKeyMethod.invoke(null, buffer);
