@@ -12,6 +12,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public record RequestPatternProvidersPacket(Object what) implements CustomPacketPayload {
     
+    @SuppressWarnings("null")
     public static final Type<RequestPatternProvidersPacket> TYPE = 
             new Type<>(ResourceLocation.fromNamespaceAndPath(AE2CraftingLens.MODID, "request_pattern_providers"));
     

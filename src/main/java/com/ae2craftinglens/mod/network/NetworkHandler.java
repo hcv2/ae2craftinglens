@@ -15,15 +15,23 @@ public class NetworkHandler {
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(AE2CraftingLens.MODID);
         
+        @SuppressWarnings("null")
+        var requestType = RequestPatternProvidersPacket.TYPE;
+        @SuppressWarnings("null")
+        var requestCodec = RequestPatternProvidersPacket.STREAM_CODEC;
         registrar.playToServer(
-                RequestPatternProvidersPacket.TYPE,
-                RequestPatternProvidersPacket.STREAM_CODEC,
+                requestType,
+                requestCodec,
                 RequestPatternProvidersPacket::handle
         );
         
+        @SuppressWarnings("null")
+        var responseType = PatternProviderResponsePacket.TYPE;
+        @SuppressWarnings("null")
+        var responseCodec = PatternProviderResponsePacket.STREAM_CODEC;
         registrar.playToClient(
-                PatternProviderResponsePacket.TYPE,
-                PatternProviderResponsePacket.STREAM_CODEC,
+                responseType,
+                responseCodec,
                 PatternProviderResponsePacket::handle
         );
     }

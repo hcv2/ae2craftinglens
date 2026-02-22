@@ -42,6 +42,7 @@ public class PatternProviderHighlightRenderer {
         poseStack.pushPose();
         poseStack.translate(-camera.x, -camera.y, -camera.z);
         
+        @SuppressWarnings("null")
         VertexConsumer vertexConsumer = bufferSource.getBuffer(RenderType.lines());
         
         for (PatternProviderHighlightManager.HighlightedProvider hp : manager.getActiveHighlights()) {
@@ -60,11 +61,13 @@ public class PatternProviderHighlightRenderer {
         float g = 0.8f;
         float b = 1.0f;
         
+        @SuppressWarnings("null")
         AABB box = new AABB(pos).inflate(0.002);
         
         renderBox(poseStack, consumer, box, r, g, b, alpha);
     }
     
+    @SuppressWarnings("null")
     private static void renderBox(PoseStack poseStack, VertexConsumer consumer, AABB box, float r, float g, float b, float a) {
         var pose = poseStack.last();
         

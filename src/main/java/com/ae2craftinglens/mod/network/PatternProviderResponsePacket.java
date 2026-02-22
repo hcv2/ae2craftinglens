@@ -16,6 +16,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public record PatternProviderResponsePacket(Set<BlockPos> positions) implements CustomPacketPayload {
     
+    @SuppressWarnings("null")
     public static final Type<PatternProviderResponsePacket> TYPE = 
             new Type<>(ResourceLocation.fromNamespaceAndPath(AE2CraftingLens.MODID, "pattern_provider_response"));
     
