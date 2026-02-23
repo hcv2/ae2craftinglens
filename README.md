@@ -1,5 +1,6 @@
-# AE2 Crafting Lens
 
+# AE2 Crafting Lens
+本项目均为ai构建
 ## 项目介绍 | Project Introduction
 
 AE2 Crafting Lens 是一个 Minecraft 模组，为 Applied Energistics 2 (AE2) 添加了实用的合成追踪功能。当您在无线终端中查看合成状态时，该模组可以高亮显示正在执行合成任务的样板供应器，并提供详细的位置信息。
