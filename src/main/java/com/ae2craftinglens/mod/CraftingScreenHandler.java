@@ -201,23 +201,26 @@ public class CraftingScreenHandler {
             int itemX, itemY, itemWidth, itemHeight;
             
             if (isCraftingStatusScreen) {
-                // 对于 CraftingStatusScreen，使用原始检测区域
-                // 用户点击的 relativeX 范围: 70-200, relativeY 范围: 29-51
-                itemX = 70;  // 扩大检测区域起始X
-                itemY = 29;  // 扩大检测区域起始Y
-                itemWidth = 130;  // 宽度覆盖 70-200 范围
-                itemHeight = 22;  // 高度覆盖 29-51 范围
-                AE2CraftingLens.LOGGER.info("Using CraftingStatusScreen detection area");
+                // 对于 CraftingStatusScreen，使用从 AE2 源代码分析得出的精确位置
+                // 表格起始位置: (9, 19)，单元格大小: 67x22，单元格边框: 1
+                // 物品在单元格内位置: X偏移+48, Y偏移+3
+                // 第一行第一列物品位置: (57, 22)
+                // 基于用户点击数据调整，覆盖 X: 57-209, Y: 22-38 (第一行)
+                itemX = 57;  // 精确计算的第一列物品X位置
+                itemY = 22;  // 精确计算的第一行物品Y位置
+                itemWidth = 152;  // 宽度覆盖三列 (57到209)
+                itemHeight = 16;  // 标准物品槽高度
+                AE2CraftingLens.LOGGER.info("Using precise CraftingStatusScreen detection area based on AE2 source code");
             } else if (isWCTScreen) {
-                // 对于 WCTScreen（无线通用终端），使用相同的检测区域
-                // 从日志看，用户点击位置相似，但可能需要调整
-                itemX = 70;  // 扩大检测区域起始X
-                itemY = 29;  // 扩大检测区域起始Y
-                itemWidth = 130;  // 宽度覆盖 70-200 范围
-                itemHeight = 22;  // 高度覆盖 29-51 范围
-                AE2CraftingLens.LOGGER.info("Using WCTScreen detection area");
+                // 对于 WCTScreen（无线通用终端），暂时使用相同的检测区域
+                // 可能需要根据实际布局调整
+                itemX = 57;
+                itemY = 22;
+                itemWidth = 152;
+                itemHeight = 16;
+                AE2CraftingLens.LOGGER.info("Using WCTScreen detection area (same as CraftingStatusScreen for now)");
             } else {
-                // 未知屏幕类型，使用默认区域
+                // 未知屏幕类型，使用基于用户点击数据的区域
                 itemX = 70;
                 itemY = 29;
                 itemWidth = 130;
