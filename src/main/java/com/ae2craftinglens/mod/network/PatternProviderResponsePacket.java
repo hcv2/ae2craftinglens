@@ -134,8 +134,10 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                         Method fromRgbMethod = textColorClass.getMethod("fromRgb", int.class);
                         Object textColor = fromRgbMethod.invoke(null, 0x00FFFF);
                         
+                        // 获取Style.EMPTY实例
+                        Object emptyStyle = styleClass.getField("EMPTY").get(null);
                         Method styleBuilderMethod = styleClass.getMethod("copy");
-                        Object style = styleBuilderMethod.invoke(null);
+                        Object style = styleBuilderMethod.invoke(emptyStyle);
                         
                         // 设置颜色
                         Method withColorMethod = styleClass.getMethod("withColor", textColorClass);
@@ -184,7 +186,7 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                         Object posComponent = literalClass.getConstructor(String.class).newInstance(pos.getX() + ", " + pos.getY() + ", " + pos.getZ());
                         
                         // 创建坐标样式
-                        style = styleBuilderMethod.invoke(null);
+                        style = styleBuilderMethod.invoke(emptyStyle);
                         style = withColorMethod.invoke(style, fromRgbMethod.invoke(null, 0x00FF00));
                         style = withUnderlinedMethod.invoke(style, true);
                         
@@ -210,7 +212,7 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                         
                         // 添加距离信息
                         Object distanceComponent = literalClass.getConstructor(String.class).newInstance(String.format("%.1f blocks", distance));
-                        style = styleBuilderMethod.invoke(null);
+                        style = styleBuilderMethod.invoke(emptyStyle);
                         style = withColorMethod.invoke(style, fromRgbMethod.invoke(null, 0xFFFF00));
                         distanceComponent = withStyleMethod.invoke(distanceComponent, style);
                         baseMessage = appendMethod.invoke(baseMessage, distanceComponent);
