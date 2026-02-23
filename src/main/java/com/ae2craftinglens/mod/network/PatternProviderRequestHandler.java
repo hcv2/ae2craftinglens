@@ -84,7 +84,7 @@ public class PatternProviderRequestHandler {
             
             AE2CraftingLens.LOGGER.info("Attempting to find pattern providers");
             Set<BlockPos> providerPositions = targetKey == null ? 
-                findAllActivePatternProviders(grid) : 
+                findAllActivePatternProviders(grid, player.containerMenu) : 
                 findPatternProvidersForKey(grid, targetKey);
             
             if (targetKey == null) {
@@ -160,17 +160,26 @@ public class PatternProviderRequestHandler {
         return positions;
     }
     
-    private static Set<BlockPos> findAllActivePatternProviders(Object grid) {
+    private static Set<BlockPos> findAllActivePatternProviders(Object grid, Object menu) {
         Set<BlockPos> positions = new HashSet<>();
         
         try {
+            // 方法1: 尝试从 CraftingStatusMenu 的 cpuList 获取活跃的合成作业
+            if (menu != null && menu.getClass().getName().contains("CraftingStatusMenu")) {
+                AE2CraftingLens.LOGGER.info("Attempting to get active providers from CraftingStatusMenu cpuList");
+                positions.addAll(findProvidersFromCraftingStatusMenu(menu));
+                if (!positions.isEmpty()) {
+                    return positions;
+                }
+            }
+            
             Object craftingService = invokeMethod(grid, "getCraftingService", Object.class);
             if (craftingService == null) {
                 AE2CraftingLens.LOGGER.warn("Could not get crafting service");
                 return positions;
             }
             
-            // 尝试获取所有活跃的合成作业
+            // 方法2: 尝试获取所有活跃的合成作业
             try {
                 Method getJobsMethod = craftingService.getClass().getMethod("getJobs");
                 Iterable<?> jobs = (Iterable<?>) getJobsMethod.invoke(craftingService);
@@ -207,8 +216,10 @@ public class PatternProviderRequestHandler {
                 }
             } catch (Exception e) {
                 AE2CraftingLens.LOGGER.debug("Error getting jobs: {}", e.getMessage());
-                
-                // 备选方案：尝试获取所有样板供应器
+            }
+            
+            // 方法3: 尝试获取所有样板供应器
+            if (positions.isEmpty()) {
                 try {
                     Method getPatternProvidersMethod = grid.getClass().getMethod("getPatternProviders");
                     Iterable<?> providers = (Iterable<?>) getPatternProvidersMethod.invoke(grid);
@@ -237,9 +248,129 @@ public class PatternProviderRequestHandler {
         return positions;
     }
     
+    private static Set<BlockPos> findProvidersFromCraftingStatusMenu(Object menu) {
+        Set<BlockPos> positions = new HashSet<>();
+        
+        try {
+            // 获取 cpuList 字段
+            Field cpuListField = menu.getClass().getDeclaredField("cpuList");
+            cpuListField.setAccessible(true);
+            Object cpuList = cpuListField.get(menu);
+            
+            if (cpuList == null) {
+                AE2CraftingLens.LOGGER.info("cpuList is null");
+                return positions;
+            }
+            
+            AE2CraftingLens.LOGGER.info("Found cpuList: {}", cpuList);
+            
+            // 尝试获取 cpus 列表
+            try {
+                Field cpusField = cpuList.getClass().getDeclaredField("cpus");
+                cpusField.setAccessible(true);
+                Iterable<?> cpus = (Iterable<?>) cpusField.get(cpuList);
+                
+                if (cpus == null) {
+                    AE2CraftingLens.LOGGER.info("cpus list is null");
+                    return positions;
+                }
+                
+                int cpuCount = 0;
+                for (Object cpu : cpus) {
+                    cpuCount++;
+                    try {
+                        // 尝试获取当前作业
+                        Method getCurrentJobMethod = cpu.getClass().getMethod("getCurrentJob");
+                        Object currentJob = getCurrentJobMethod.invoke(cpu);
+                        
+                        if (currentJob != null) {
+                            AE2CraftingLens.LOGGER.info("Found active job on CPU {}: {}", cpuCount, currentJob);
+                            
+                            // 获取 grid
+                            Field gridField = menu.getClass().getDeclaredField("grid");
+                            gridField.setAccessible(true);
+                            Object grid = gridField.get(menu);
+                            
+                            if (grid != null) {
+                                Object craftingService = invokeMethod(grid, "getCraftingService", Object.class);
+                                if (craftingService != null) {
+                                    // currentJob 可能是 GenericStack 类型，需要获取 what 字段
+                                    Object aeKey = null;
+                                    try {
+                                        // 尝试从 GenericStack 获取 what 字段 (AEKey)
+                                        Method whatMethod = currentJob.getClass().getMethod("what");
+                                        aeKey = whatMethod.invoke(currentJob);
+                                        AE2CraftingLens.LOGGER.info("Found AEKey from currentJob: {}", aeKey);
+                                    } catch (Exception e) {
+                                        AE2CraftingLens.LOGGER.debug("Error getting what from currentJob: {}", e.getMessage());
+                                    }
+                                    
+                                    if (aeKey != null) {
+                                        // 使用 AEKey 查找对应的样板
+                                        Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
+                                        Class<?> patternDetailsClass = Class.forName("appeng.api.crafting.IPatternDetails");
+                                        
+                                        Method getCraftingForMethod = craftingService.getClass().getMethod("getCraftingFor", aeKeyClass);
+                                        Iterable<?> patterns = (Iterable<?>) getCraftingForMethod.invoke(craftingService, aeKey);
+                                        
+                                        if (patterns != null) {
+                                            for (Object pattern : patterns) {
+                                                try {
+                                                    Method getProvidersMethod = craftingService.getClass().getMethod("getProviders", patternDetailsClass);
+                                                    Iterable<?> providers = (Iterable<?>) getProvidersMethod.invoke(craftingService, pattern);
+                                                    
+                                                    if (providers != null) {
+                                                        for (Object provider : providers) {
+                                                            BlockPos pos = getProviderPosition(provider);
+                                                            if (pos != null) {
+                                                                positions.add(pos);
+                                                                AE2CraftingLens.LOGGER.info("Found provider at {} for active job", pos);
+                                                            }
+                                                        }
+                                                    }
+                                                } catch (Exception e) {
+                                                    AE2CraftingLens.LOGGER.debug("Error getting providers for pattern: {}", e.getMessage());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Error processing CPU {}: {}", cpuCount, e.getMessage());
+                    }
+                }
+                
+                AE2CraftingLens.LOGGER.info("Processed {} CPUs from cpuList", cpuCount);
+                
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.error("Error accessing cpus list: {}", e.getMessage());
+            }
+            
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.error("Error finding providers from CraftingStatusMenu: {}", e.getMessage());
+        }
+        
+        return positions;
+    }
+    
     private static Object findGridFromCraftingStatusMenu(Object menu) {
         try {
-            // 尝试找到 cpu 字段
+            // 方法1: 直接获取 grid 字段
+            try {
+                Field gridField = menu.getClass().getDeclaredField("grid");
+                gridField.setAccessible(true);
+                Object grid = gridField.get(menu);
+                if (grid != null) {
+                    AE2CraftingLens.LOGGER.info("Found grid field directly in CraftingStatusMenu: {}", grid);
+                    return grid;
+                }
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Could not get grid field directly: {}", e.getMessage());
+            }
+            
+            // 方法2: 尝试找到 cpu 字段
             Object cpu = findFieldByTypeName(menu, "CraftingCPU");
             if (cpu != null) {
                 AE2CraftingLens.LOGGER.info("Found CPU in CraftingStatusMenu: {}", cpu);
@@ -250,7 +381,7 @@ public class PatternProviderRequestHandler {
                 }
             }
             
-            // 尝试找到 cluster 字段
+            // 方法3: 尝试找到 cluster 字段
             Object cluster = findFieldByTypeName(menu, "Cluster");
             if (cluster != null) {
                 AE2CraftingLens.LOGGER.info("Found cluster in CraftingStatusMenu: {}", cluster);
@@ -258,25 +389,6 @@ public class PatternProviderRequestHandler {
                 if (grid != null) {
                     return grid;
                 }
-            }
-            
-            // 尝试找到所有字段并打印出来，以便调试
-            AE2CraftingLens.LOGGER.info("Listing all fields in CraftingStatusMenu:");
-            Class<?> clazz = menu.getClass();
-            while (clazz != null) {
-                for (Field field : clazz.getDeclaredFields()) {
-                    field.setAccessible(true);
-                    try {
-                        Object value = field.get(menu);
-                        if (value != null) {
-                            AE2CraftingLens.LOGGER.info("Field: {} = {} (Type: {})", 
-                                field.getName(), value, value.getClass().getName());
-                        }
-                    } catch (Exception e) {
-                        // ignore
-                    }
-                }
-                clazz = clazz.getSuperclass();
             }
             
         } catch (Exception e) {

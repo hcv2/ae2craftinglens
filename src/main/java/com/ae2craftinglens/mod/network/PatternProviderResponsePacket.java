@@ -1,5 +1,6 @@
 package com.ae2craftinglens.mod.network;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Set;
@@ -71,18 +72,20 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                 Object minecraft = getInstanceMethod.invoke(null);
                 AE2CraftingLens.LOGGER.info("Found Minecraft instance: {}", minecraft);
                 
-                // 获取player
-                Method getPlayerMethod = minecraftClass.getMethod("getPlayer");
-                Object player = getPlayerMethod.invoke(minecraft);
+                // 获取player - 在1.21.1中，player是字段而不是方法
+                Field playerField = minecraftClass.getDeclaredField("player");
+                playerField.setAccessible(true);
+                Object player = playerField.get(minecraft);
                 if (player == null) {
                     AE2CraftingLens.LOGGER.warn("Player is null, skipping");
                     return;
                 }
                 AE2CraftingLens.LOGGER.info("Found player: {}", player);
                 
-                // 获取level
-                Method getLevelMethod = minecraftClass.getMethod("level");
-                Object level = getLevelMethod.invoke(minecraft);
+                // 获取level - 在1.21.1中，level是字段而不是方法
+                Field levelField = minecraftClass.getDeclaredField("level");
+                levelField.setAccessible(true);
+                Object level = levelField.get(minecraft);
                 if (level == null) {
                     AE2CraftingLens.LOGGER.warn("Level is null, skipping");
                     return;
@@ -97,8 +100,9 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                     // 显示无供应器消息
                     try {
                         Class<?> componentClass = Class.forName("net.minecraft.network.chat.Component");
-                        Class<?> translatableClass = Class.forName("net.minecraft.network.chat.TranslatableComponent");
-                        Object message = translatableClass.getConstructor(String.class).newInstance("message.ae2craftinglens.no_providers_found");
+                        // 使用 Component.translatable() 方法
+                        Method translatableMethod = componentClass.getMethod("translatable", String.class);
+                        Object message = translatableMethod.invoke(null, "message.ae2craftinglens.no_providers_found");
                         
                         Method displayClientMessageMethod = player.getClass().getMethod("displayClientMessage", componentClass, boolean.class);
                         displayClientMessageMethod.invoke(player, message, true);
