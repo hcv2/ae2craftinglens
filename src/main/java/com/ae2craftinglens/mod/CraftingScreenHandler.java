@@ -148,6 +148,39 @@ public class CraftingScreenHandler {
                                 superClass = superClass.getSuperclass();
                             }
                             
+                            // 尝试从container字段获取物品信息
+                            try {
+                                java.lang.reflect.Field containerField = screen.getClass().getDeclaredField("container");
+                                containerField.setAccessible(true);
+                                Object container = containerField.get(screen);
+                                if (container != null) {
+                                    AE2CraftingLens.LOGGER.info("Found container: {} (Type: {})", container, container.getClass().getName());
+                                    
+                                    // 尝试获取container中的slots或其他可能包含物品的字段
+                                    String[] containerFieldNames = {"slots", "jobList", "craftingJobs", "tasks", "items"};
+                                    for (String fieldName : containerFieldNames) {
+                                        try {
+                                            java.lang.reflect.Field field = container.getClass().getDeclaredField(fieldName);
+                                            field.setAccessible(true);
+                                            Object value = field.get(container);
+                                            if (value != null) {
+                                                AE2CraftingLens.LOGGER.info("Found container field: {} = {} (Type: {})", fieldName, value, value.getClass().getName());
+                                                
+                                                // 尝试检查是否是可迭代的列表
+                                                if (value instanceof Iterable) {
+                                                    AE2CraftingLens.LOGGER.info("Container field {} is Iterable", fieldName);
+                                                    // 这里可以进一步处理迭代器，找到鼠标位置对应的物品
+                                                }
+                                            }
+                                        } catch (Exception ex) {
+                                            // 忽略，尝试下一个字段名
+                                        }
+                                    }
+                                }
+                            } catch (Exception ex) {
+                                AE2CraftingLens.LOGGER.error("Error accessing container field: {}", ex.getMessage());
+                            }
+                            
                             // 尝试常见的字段名
                             String[] possibleFieldNames = {
                                 "jobs", "craftingJobs", "jobList", "tasks", "craftingTasks",
