@@ -152,13 +152,47 @@ public class CraftingScreenHandler {
             double relativeX = mouseX - guiLeft;
             double relativeY = mouseY - guiTop;
             
+            // 调试：输出屏幕上的renderables信息
+            try {
+                java.lang.reflect.Field renderablesField = screen.getClass().getDeclaredField("renderables");
+                renderablesField.setAccessible(true);
+                Iterable<?> renderables = (Iterable<?>) renderablesField.get(screen);
+                if (renderables != null) {
+                    int count = 0;
+                    for (Object renderable : renderables) {
+                        if (renderable != null) {
+                            String className = renderable.getClass().getName();
+                            // 尝试获取位置信息
+                            try {
+                                java.lang.reflect.Method getXMethod = renderable.getClass().getMethod("getX");
+                                java.lang.reflect.Method getYMethod = renderable.getClass().getMethod("getY");
+                                java.lang.reflect.Method getWidthMethod = renderable.getClass().getMethod("getWidth");
+                                java.lang.reflect.Method getHeightMethod = renderable.getClass().getMethod("getHeight");
+                                int x = (int) getXMethod.invoke(renderable);
+                                int y = (int) getYMethod.invoke(renderable);
+                                int width = (int) getWidthMethod.invoke(renderable);
+                                int height = (int) getHeightMethod.invoke(renderable);
+                                AE2CraftingLens.LOGGER.info("Renderable {}: {} at ({}, {}) size ({}, {})", 
+                                        count, className, x, y, width, height);
+                            } catch (Exception e) {
+                                AE2CraftingLens.LOGGER.info("Renderable {}: {} (no position info)", count, className);
+                            }
+                            count++;
+                        }
+                    }
+                    AE2CraftingLens.LOGGER.info("Total renderables: {}", count);
+                }
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Error inspecting renderables: {}", e.getMessage());
+            }
+            
             // 在 CraftingStatusScreen 中，当前合成物品显示在特定位置
-            // 根据 AE2 的代码分析，物品显示在 x=80, y=34 的位置（相对于 GUI 左上角）
-            // 这是 16x16 的物品槽
-            int itemX = 80;  // 相对于 GUI 左侧偏移 80 像素
-            int itemY = 34;  // 相对于 GUI 顶部偏移 34 像素
-            int itemWidth = 16;
-            int itemHeight = 16;
+            // 根据调试日志调整位置，覆盖用户点击区域
+            // 用户点击的 relativeX 范围: 70-200, relativeY 范围: 29-51
+            int itemX = 70;  // 扩大检测区域起始X
+            int itemY = 29;  // 扩大检测区域起始Y
+            int itemWidth = 130;  // 宽度覆盖 70-200 范围
+            int itemHeight = 22;  // 高度覆盖 29-51 范围
             
             // 检查鼠标是否在物品区域内
             boolean isOnItem = relativeX >= itemX && relativeX < itemX + itemWidth && 
