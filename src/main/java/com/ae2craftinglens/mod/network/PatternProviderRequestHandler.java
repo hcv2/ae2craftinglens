@@ -14,7 +14,10 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public class PatternProviderRequestHandler {
     
     public static void handle(RequestPatternProvidersPacket packet, IPayloadContext context) {
+        AE2CraftingLens.LOGGER.info("=== AE2 Crafting Lens: Server received pattern provider request ===");
+        
         if (!(context.player() instanceof ServerPlayer player)) {
+            AE2CraftingLens.LOGGER.warn("Player is not a ServerPlayer");
             return;
         }
         
@@ -43,27 +46,40 @@ public class PatternProviderRequestHandler {
         AE2CraftingLens.LOGGER.info("Crafting menu detected");
         
         try {
+            AE2CraftingLens.LOGGER.info("Attempting to find CraftingCPUCluster");
             Object cluster = findFieldByTypeName(player.containerMenu, "CraftingCPUCluster");
             if (cluster == null) {
                 AE2CraftingLens.LOGGER.warn("Could not find CraftingCPUCluster in menu");
                 return;
             }
+            AE2CraftingLens.LOGGER.info("Found CraftingCPUCluster: {}", cluster);
             
+            AE2CraftingLens.LOGGER.info("Attempting to get grid");
             Object grid = invokeMethod(cluster, "getGrid", Object.class);
             if (grid == null) {
                 AE2CraftingLens.LOGGER.warn("Could not get grid");
                 return;
             }
+            AE2CraftingLens.LOGGER.info("Found grid: {}", grid);
             
+            AE2CraftingLens.LOGGER.info("Attempting to find pattern providers");
             Set<BlockPos> providerPositions = findPatternProvidersForKey(grid, targetKey);
             AE2CraftingLens.LOGGER.info("Found {} pattern provider positions for {}", providerPositions.size(), targetKey);
             
+            for (BlockPos pos : providerPositions) {
+                AE2CraftingLens.LOGGER.info("Found provider at: {}", pos);
+            }
+            
+            AE2CraftingLens.LOGGER.info("Creating response packet");
             PatternProviderResponsePacket response = new PatternProviderResponsePacket(providerPositions);
+            AE2CraftingLens.LOGGER.info("Sending response packet to client");
             context.reply(response);
+            AE2CraftingLens.LOGGER.info("Response packet sent successfully");
             
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error handling pattern provider request", e);
         }
+        AE2CraftingLens.LOGGER.info("=== AE2 Crafting Lens: Server request processed ===");
     }
     
     private static Set<BlockPos> findPatternProvidersForKey(Object grid, Object targetKey) {
