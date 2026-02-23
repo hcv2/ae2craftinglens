@@ -46,18 +46,38 @@ public class PatternProviderRequestHandler {
         AE2CraftingLens.LOGGER.info("Crafting menu detected");
         
         try {
-            AE2CraftingLens.LOGGER.info("Attempting to find CraftingCPUCluster");
-            Object cluster = findFieldByTypeName(player.containerMenu, "CraftingCPUCluster");
-            if (cluster == null) {
-                AE2CraftingLens.LOGGER.warn("Could not find CraftingCPUCluster in menu");
-                return;
-            }
-            AE2CraftingLens.LOGGER.info("Found CraftingCPUCluster: {}", cluster);
+            Object grid = null;
             
-            AE2CraftingLens.LOGGER.info("Attempting to get grid");
-            Object grid = invokeMethod(cluster, "getGrid", Object.class);
+            // 方法1: 尝试从 CraftingStatusMenu 获取 grid
+            if (containerClassName.contains("CraftingStatusMenu")) {
+                AE2CraftingLens.LOGGER.info("Attempting to get grid from CraftingStatusMenu");
+                grid = findGridFromCraftingStatusMenu(player.containerMenu);
+            }
+            
+            // 方法2: 尝试找到 CraftingCPUCluster 然后获取 grid
             if (grid == null) {
-                AE2CraftingLens.LOGGER.warn("Could not get grid");
+                AE2CraftingLens.LOGGER.info("Attempting to find CraftingCPUCluster");
+                Object cluster = findFieldByTypeName(player.containerMenu, "CraftingCPUCluster");
+                if (cluster != null) {
+                    AE2CraftingLens.LOGGER.info("Found CraftingCPUCluster: {}", cluster);
+                    grid = invokeMethod(cluster, "getGrid", Object.class);
+                }
+            }
+            
+            // 方法3: 尝试直接从 menu 获取 grid
+            if (grid == null) {
+                AE2CraftingLens.LOGGER.info("Attempting to get grid directly from menu");
+                grid = invokeMethod(player.containerMenu, "getGrid", Object.class);
+            }
+            
+            // 方法4: 尝试找到包含 "Grid" 的字段
+            if (grid == null) {
+                AE2CraftingLens.LOGGER.info("Attempting to find grid field");
+                grid = findFieldByTypeName(player.containerMenu, "Grid");
+            }
+            
+            if (grid == null) {
+                AE2CraftingLens.LOGGER.warn("Could not find grid in menu");
                 return;
             }
             AE2CraftingLens.LOGGER.info("Found grid: {}", grid);
@@ -215,6 +235,54 @@ public class PatternProviderRequestHandler {
         }
         
         return positions;
+    }
+    
+    private static Object findGridFromCraftingStatusMenu(Object menu) {
+        try {
+            // 尝试找到 cpu 字段
+            Object cpu = findFieldByTypeName(menu, "CraftingCPU");
+            if (cpu != null) {
+                AE2CraftingLens.LOGGER.info("Found CPU in CraftingStatusMenu: {}", cpu);
+                // 尝试从 cpu 获取 grid
+                Object grid = invokeMethod(cpu, "getGrid", Object.class);
+                if (grid != null) {
+                    return grid;
+                }
+            }
+            
+            // 尝试找到 cluster 字段
+            Object cluster = findFieldByTypeName(menu, "Cluster");
+            if (cluster != null) {
+                AE2CraftingLens.LOGGER.info("Found cluster in CraftingStatusMenu: {}", cluster);
+                Object grid = invokeMethod(cluster, "getGrid", Object.class);
+                if (grid != null) {
+                    return grid;
+                }
+            }
+            
+            // 尝试找到所有字段并打印出来，以便调试
+            AE2CraftingLens.LOGGER.info("Listing all fields in CraftingStatusMenu:");
+            Class<?> clazz = menu.getClass();
+            while (clazz != null) {
+                for (Field field : clazz.getDeclaredFields()) {
+                    field.setAccessible(true);
+                    try {
+                        Object value = field.get(menu);
+                        if (value != null) {
+                            AE2CraftingLens.LOGGER.info("Field: {} = {} (Type: {})", 
+                                field.getName(), value, value.getClass().getName());
+                        }
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                }
+                clazz = clazz.getSuperclass();
+            }
+            
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.error("Error finding grid from CraftingStatusMenu", e);
+        }
+        return null;
     }
     
     private static Object findFieldByTypeName(Object obj, String typeName) {
