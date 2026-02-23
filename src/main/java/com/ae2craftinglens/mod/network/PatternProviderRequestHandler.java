@@ -382,6 +382,39 @@ public class PatternProviderRequestHandler {
                                 } catch (Exception e) {
                                     AE2CraftingLens.LOGGER.error("Error finding patterns for AEKey: {}", e.getMessage(), e);
                                 }
+                                
+                                // 备选方案：尝试从 craftingService 获取所有活跃的合成任务
+                                try {
+                                    AE2CraftingLens.LOGGER.info("Trying alternative method: getting active jobs from craftingService");
+                                    Method getActiveJobsMethod = craftingService.getClass().getMethod("getActiveJobs");
+                                    Iterable<?> activeJobs = (Iterable<?>) getActiveJobsMethod.invoke(craftingService);
+                                    
+                                    if (activeJobs != null) {
+                                        int jobCount = 0;
+                                        for (Object job : activeJobs) {
+                                            jobCount++;
+                                            AE2CraftingLens.LOGGER.info("Found active job {}: {}", jobCount, job);
+                                            // 尝试从 job 获取样板供应器
+                                            try {
+                                                Method getPatternProviderMethod = job.getClass().getMethod("getPatternProvider");
+                                                Object provider = getPatternProviderMethod.invoke(job);
+                                                if (provider != null) {
+                                                    AE2CraftingLens.LOGGER.info("Found pattern provider from job: {}", provider);
+                                                    BlockPos pos = getProviderPosition(provider);
+                                                    if (pos != null) {
+                                                        positions.add(pos);
+                                                        AE2CraftingLens.LOGGER.info("Found provider at {} from active job", pos);
+                                                    }
+                                                }
+                                            } catch (Exception ex) {
+                                                AE2CraftingLens.LOGGER.debug("Error getting pattern provider from job: {}", ex.getMessage());
+                                            }
+                                        }
+                                        AE2CraftingLens.LOGGER.info("Total active jobs found: {}", jobCount);
+                                    }
+                                } catch (Exception ex) {
+                                    AE2CraftingLens.LOGGER.debug("Error getting active jobs: {}", ex.getMessage());
+                                }
                             } else {
                                 AE2CraftingLens.LOGGER.warn("AEKey is null, cannot find patterns");
                             }
