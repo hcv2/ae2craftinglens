@@ -1,7 +1,6 @@
 package com.ae2craftinglens.mod;
 
 import org.slf4j.Logger;
-
 import com.ae2craftinglens.mod.network.NetworkHandler;
 import com.mojang.logging.LogUtils;
 
@@ -19,6 +18,10 @@ public class AE2CraftingLens {
     public static final String MODID = "ae2craftinglens";
     // Directly reference a slf4j logger
     public static final Logger LOGGER = LogUtils.getLogger();
+    
+    public static boolean isDebugLoggingEnabled() {
+        return Config.ENABLE_DEBUG_LOGS.get();
+    }
 
     // The constructor for the mod class is the first code that is run when your mod is loaded.
     // FML will recognize some parameter types like IEventBus or ModContainer and pass them in automatically.

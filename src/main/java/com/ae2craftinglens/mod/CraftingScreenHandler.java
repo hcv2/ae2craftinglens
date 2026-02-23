@@ -12,48 +12,64 @@ public class CraftingScreenHandler {
     private Object lastClickedAEKey = null;
     
     public CraftingScreenHandler() {
-        AE2CraftingLens.LOGGER.info("CraftingScreenHandler instance created");
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("CraftingScreenHandler instance created");
+        }
     }
     
     @SubscribeEvent
     public void onMouseDown(ScreenEvent.MouseButtonPressed.Pre event) {
-        AE2CraftingLens.LOGGER.info("=== AE2 Crafting Lens: Mouse click event received ===");
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("=== AE2 Crafting Lens: Mouse click event received ===");
+        }
         // 重置上次点击的 AEKey
         lastClickedAEKey = null;
         
         // 首先检查是否是合成状态屏幕
         Object screen = event.getScreen();
         if (screen == null) {
-            AE2CraftingLens.LOGGER.info("Screen is null, skipping");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Screen is null, skipping");
+            }
             return;
         }
         
         String screenClassName = screen.getClass().getName();
-        AE2CraftingLens.LOGGER.info("Screen class: {}", screenClassName);
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("Screen class: {}", screenClassName);
+        }
         
         // 在 CraftingStatusScreen 或无线通用终端(WCTScreen)中处理点击
         boolean isCraftingStatusScreen = screenClassName.contains("CraftingStatusScreen");
         boolean isWCTScreen = screenClassName.contains("WCTScreen") && screenClassName.contains("ae2wtlib");
         
         if (!isCraftingStatusScreen && !isWCTScreen) {
-            AE2CraftingLens.LOGGER.info("Not a CraftingStatusScreen or WCTScreen, skipping");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Not a CraftingStatusScreen or WCTScreen, skipping");
+            }
             return;
         }
         
-        AE2CraftingLens.LOGGER.info("Screen type: {} (CraftingStatusScreen: {}, WCTScreen: {})", 
-                isCraftingStatusScreen ? "CraftingStatusScreen" : "WCTScreen", 
-                isCraftingStatusScreen, isWCTScreen);
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("Screen type: {} (CraftingStatusScreen: {}, WCTScreen: {})", 
+                    isCraftingStatusScreen ? "CraftingStatusScreen" : "WCTScreen", 
+                    isCraftingStatusScreen, isWCTScreen);
+        }
         
         // 检查是否是左键点击
         if (event.getButton() != 0) {
-            AE2CraftingLens.LOGGER.info("Not left mouse button, skipping");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Not left mouse button, skipping");
+            }
             return;
         }
         
         // 检查是否按住Shift
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
-            AE2CraftingLens.LOGGER.info("Player is null, skipping");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Player is null, skipping");
+            }
             return;
         }
         
@@ -64,9 +80,13 @@ public class CraftingScreenHandler {
         try {
             java.lang.reflect.Method hasShiftDownMethod = event.getClass().getMethod("hasShiftDown");
             isShiftPressed = (boolean) hasShiftDownMethod.invoke(event);
-            AE2CraftingLens.LOGGER.info("Shift detection via event.hasShiftDown(): {}", isShiftPressed);
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Shift detection via event.hasShiftDown(): {}", isShiftPressed);
+            }
         } catch (Exception e) {
-            AE2CraftingLens.LOGGER.debug("Event.hasShiftDown() not available: {}", e.getMessage());
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.debug("Event.hasShiftDown() not available: {}", e.getMessage());
+            }
         }
         
         // 方法2: 如果方法1失败，尝试使用屏幕的hasShiftDown方法
@@ -75,16 +95,22 @@ public class CraftingScreenHandler {
                 // 使用已存在的screen变量
                 java.lang.reflect.Method hasShiftDownMethod = screen.getClass().getMethod("hasShiftDown");
                 isShiftPressed = (boolean) hasShiftDownMethod.invoke(screen);
-                AE2CraftingLens.LOGGER.info("Shift detection via screen.hasShiftDown(): {}", isShiftPressed);
+                if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                    AE2CraftingLens.LOGGER.info("Shift detection via screen.hasShiftDown(): {}", isShiftPressed);
+                }
             } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Screen.hasShiftDown() not available: {}", e.getMessage());
+                if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                    AE2CraftingLens.LOGGER.debug("Screen.hasShiftDown() not available: {}", e.getMessage());
+                }
             }
         }
         
         // 方法3: 回退到原始的键位绑定检测
         if (!isShiftPressed) {
             isShiftPressed = mc.options.keyShift.isDown();
-            AE2CraftingLens.LOGGER.info("Shift detection via key binding: {}", isShiftPressed);
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Shift detection via key binding: {}", isShiftPressed);
+            }
         }
         
         // 方法4: 检查键盘状态（最底层的检测）
@@ -97,40 +123,58 @@ public class CraftingScreenHandler {
                 boolean leftShift = (boolean) isKeyDownMethod.invoke(null, 340);
                 boolean rightShift = (boolean) isKeyDownMethod.invoke(null, 344);
                 isShiftPressed = leftShift || rightShift;
-                AE2CraftingLens.LOGGER.info("Shift detection via raw keyboard (L:{}, R:{}): {}", leftShift, rightShift, isShiftPressed);
+                if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                    AE2CraftingLens.LOGGER.info("Shift detection via raw keyboard (L:{}, R:{}): {}", leftShift, rightShift, isShiftPressed);
+                }
             } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Raw keyboard detection failed: {}", e.getMessage());
+                if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                    AE2CraftingLens.LOGGER.debug("Raw keyboard detection failed: {}", e.getMessage());
+                }
             }
         }
         
-        AE2CraftingLens.LOGGER.info("Final shift key pressed: {}", isShiftPressed);
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("Final shift key pressed: {}", isShiftPressed);
+        }
         
         // 测试模式：暂时允许不按Shift键
         boolean testMode = false;
-        AE2CraftingLens.LOGGER.info("Test mode: {}", testMode);
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("Test mode: {}", testMode);
+        }
         
         if (!isShiftPressed && !testMode) {
-            AE2CraftingLens.LOGGER.info("Shift not pressed and not in test mode, skipping");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Shift not pressed and not in test mode, skipping");
+            }
             return;
         }
         
-        AE2CraftingLens.LOGGER.info("Mouse position: {}, {}", event.getMouseX(), event.getMouseY());
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("Mouse position: {}, {}", event.getMouseX(), event.getMouseY());
+        }
         
         // 检查是否点击在按钮上 - 如果是按钮区域，不处理，让AE2自己处理
         if (isClickOnButton(event)) {
-            AE2CraftingLens.LOGGER.info("Click is on a button, letting AE2 handle it");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Click is on a button, letting AE2 handle it");
+            }
             return;
         }
         
         // 检查是否点击在当前合成物品上
         if (!isClickOnCraftingItem(screen, event.getMouseX(), event.getMouseY())) {
-            AE2CraftingLens.LOGGER.info("Click is not on the crafting item, skipping");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Click is not on the crafting item, skipping");
+            }
             return;
         }
         
         // 取消事件，防止尝试打开被指向的方块
         event.setCanceled(true);
-        AE2CraftingLens.LOGGER.info("Event canceled to prevent opening targeted blocks");
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("Event canceled to prevent opening targeted blocks");
+        }
         
         try {
             // 优先从选中的CPU提取AEKey（减少UI反射依赖）
@@ -138,9 +182,13 @@ public class CraftingScreenHandler {
             if (aeKey == null) {
                 // 回退到UI反射提取的AEKey
                 aeKey = lastClickedAEKey;
-                AE2CraftingLens.LOGGER.info("Using UI-extracted AEKey: {}", aeKey);
+                if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                    AE2CraftingLens.LOGGER.info("Using UI-extracted AEKey: {}", aeKey);
+                }
             } else {
-                AE2CraftingLens.LOGGER.info("Using CPU-extracted AEKey: {}", aeKey);
+                if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                    AE2CraftingLens.LOGGER.info("Using CPU-extracted AEKey: {}", aeKey);
+                }
             }
             
             if (aeKey == null) {
@@ -148,15 +196,21 @@ public class CraftingScreenHandler {
             }
             
             RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey);
-            AE2CraftingLens.LOGGER.info("Sending RequestPatternProvidersPacket with AEKey");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Sending RequestPatternProvidersPacket with AEKey");
+            }
             PacketDistributor.sendToServer(packet);
-            AE2CraftingLens.LOGGER.info("Packet sent successfully");
+            if (AE2CraftingLens.isDebugLoggingEnabled()) {
+                AE2CraftingLens.LOGGER.info("Packet sent successfully");
+            }
             // 重置 AEKey
             lastClickedAEKey = null;
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error handling mouse click", e);
         }
-        AE2CraftingLens.LOGGER.info("=== AE2 Crafting Lens: Mouse click event processed ===");
+        if (AE2CraftingLens.isDebugLoggingEnabled()) {
+            AE2CraftingLens.LOGGER.info("=== AE2 Crafting Lens: Mouse click event processed ===");
+        }
     }
     
     /**

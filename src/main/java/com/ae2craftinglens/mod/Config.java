@@ -15,6 +15,10 @@ public class Config {
             .comment("Whether to log the dirt block on common setup")
             .define("logDirtBlock", true);
 
+    public static final ModConfigSpec.BooleanValue ENABLE_DEBUG_LOGS = BUILDER
+            .comment("Enable debug logging output for troubleshooting")
+            .define("enableDebugLogs", false);
+
     public static final ModConfigSpec.IntValue MAGIC_NUMBER = BUILDER
             .comment("A magic number")
             .defineInRange("magicNumber", 42, 0, Integer.MAX_VALUE);
