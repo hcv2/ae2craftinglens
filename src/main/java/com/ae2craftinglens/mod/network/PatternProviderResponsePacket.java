@@ -184,9 +184,23 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             Method withColorMethod = styleClass.getMethod("withColor", textColorClass);
                             style = withColorMethod.invoke(style, textColor);
                             
-                            // 设置下划线
-                            Method withUnderlinedMethod = styleClass.getMethod("withUnderlined", boolean.class);
-                            style = withUnderlinedMethod.invoke(style, true);
+                            // 设置下划线 - 尝试多个可能的方法名，因为Minecraft 1.21.1的API可能已更改
+                            Method withUnderlinedMethod = null;
+                            String[] methodNames = {"withUnderlined", "withUnderlined", "setUnderlined", "underlined", "withUnderline"};
+                            for (String methodName : methodNames) {
+                                try {
+                                    withUnderlinedMethod = styleClass.getMethod(methodName, boolean.class);
+                                    break;
+                                } catch (NoSuchMethodException e) {
+                                    // 继续尝试下一个方法名
+                                }
+                            }
+                            
+                            if (withUnderlinedMethod != null) {
+                                style = withUnderlinedMethod.invoke(style, true);
+                            } else {
+                                AE2CraftingLens.LOGGER.warn("Could not find underlined method for Style class, skipping underline");
+                            }
                             
                             // 创建点击事件
                             Class<?> clickEventClass = Class.forName("net.minecraft.network.chat.ClickEvent");
@@ -230,7 +244,11 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             // 创建坐标样式
                             style = emptyStyle;
                             style = withColorMethod.invoke(style, fromRgbMethod.invoke(null, 0x00FF00));
-                            style = withUnderlinedMethod.invoke(style, true);
+                            if (withUnderlinedMethod != null) {
+                                style = withUnderlinedMethod.invoke(style, true);
+                            } else {
+                                AE2CraftingLens.LOGGER.warn("Skipping underline for position component - method not found");
+                            }
                             
                             // 设置点击事件
                             clickEvent = clickEventClass.getConstructor(clickEventActionClass, String.class).newInstance(
