@@ -98,86 +98,90 @@ public class CraftingScreenHandler {
                 // 尝试获取AEKey
                 Object aeKey = null;
                 
-                // 方法1: 直接检查是否是AEKey
                 try {
-                    Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
-                    if (aeKeyClass.isInstance(hoveredStack)) {
-                        aeKey = hoveredStack;
-                        AE2CraftingLens.LOGGER.debug("AEKey found directly: {}", aeKey);
-                    }
-                } catch (ClassNotFoundException e) {
-                    AE2CraftingLens.LOGGER.error("AEKey class not found", e);
-                }
-                
-                // 方法2: 尝试从stack方法获取
-                if (aeKey == null) {
-                    try {
-                        Method stackMethod = hoveredStack.getClass().getMethod("stack");
-                        Object stack = stackMethod.invoke(hoveredStack);
-                        if (stack != null) {
-                            try {
-                                Method whatMethod = stack.getClass().getMethod("what");
-                                aeKey = whatMethod.invoke(stack);
-                                AE2CraftingLens.LOGGER.debug("AEKey found via stack().what(): {}", aeKey);
-                            } catch (Exception e) {
-                                AE2CraftingLens.LOGGER.debug("Error getting what() from stack: {}", e.getMessage());
-                            }
-                        }
-                    } catch (Exception e) {
-                        AE2CraftingLens.LOGGER.debug("Error calling stack() method: {}", e.getMessage());
-                    }
-                }
-                
-                // 方法3: 尝试从getType方法获取
-                if (aeKey == null) {
-                    try {
-                        Method getTypeMethod = hoveredStack.getClass().getMethod("getType");
-                        aeKey = getTypeMethod.invoke(hoveredStack);
-                        AE2CraftingLens.LOGGER.debug("AEKey found via getType(): {}", aeKey);
-                    } catch (Exception e) {
-                        AE2CraftingLens.LOGGER.debug("Error calling getType() method: {}", e.getMessage());
-                    }
-                }
-                
-                // 方法4: 尝试从getItem方法获取并转换为AEKey
-                if (aeKey == null) {
-                    try {
-                        Method getItemMethod = hoveredStack.getClass().getMethod("getItem");
-                        Object item = getItemMethod.invoke(hoveredStack);
-                        if (item != null) {
-                            try {
-                                Class<?> aeApiClass = Class.forName("appeng.api.stacks.AEApi");
-                                Method getKeyMethod = aeApiClass.getMethod("key");
-                                Object keyHelper = getKeyMethod.invoke(null);
-                                Method ofItemMethod = keyHelper.getClass().getMethod("of", net.minecraft.world.item.ItemStack.class);
-                                aeKey = ofItemMethod.invoke(keyHelper, hoveredStack);
-                                AE2CraftingLens.LOGGER.debug("AEKey found via AEApi.key().of(): {}", aeKey);
-                            } catch (Exception e) {
-                                AE2CraftingLens.LOGGER.debug("Error creating AEKey from ItemStack: {}", e.getMessage());
-                            }
-                        }
-                    } catch (Exception e) {
-                        AE2CraftingLens.LOGGER.debug("Error calling getItem() method: {}", e.getMessage());
-                    }
-                }
-                
-                if (aeKey != null) {
+                    // 方法1: 直接检查是否是AEKey
                     try {
                         Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
-                        if (aeKeyClass.isInstance(aeKey)) {
-                            RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey);
-                            AE2CraftingLens.LOGGER.debug("Sending RequestPatternProvidersPacket for: {}", aeKey);
-                            PacketDistributor.sendToServer(packet);
-                            event.setCanceled(true);
-                            AE2CraftingLens.LOGGER.debug("Event canceled to prevent additional actions");
-                            return;
+                        if (aeKeyClass.isInstance(hoveredStack)) {
+                            aeKey = hoveredStack;
+                            AE2CraftingLens.LOGGER.debug("AEKey found directly: {}", aeKey);
                         }
                     } catch (ClassNotFoundException e) {
                         AE2CraftingLens.LOGGER.error("AEKey class not found", e);
                     }
-                } else {
-                    AE2CraftingLens.LOGGER.debug("No AEKey found for hoveredStack: {}", hoveredStack);
-                    // 找到了 hoveredStack 但没有找到 AEKey，取消事件，防止尝试打开被指向的方块
+                    
+                    // 方法2: 尝试从stack方法获取
+                    if (aeKey == null) {
+                        try {
+                            Method stackMethod = hoveredStack.getClass().getMethod("stack");
+                            Object stack = stackMethod.invoke(hoveredStack);
+                            if (stack != null) {
+                                try {
+                                    Method whatMethod = stack.getClass().getMethod("what");
+                                    aeKey = whatMethod.invoke(stack);
+                                    AE2CraftingLens.LOGGER.debug("AEKey found via stack().what(): {}", aeKey);
+                                } catch (Exception e) {
+                                    AE2CraftingLens.LOGGER.debug("Error getting what() from stack: {}", e.getMessage());
+                                }
+                            }
+                        } catch (Exception e) {
+                            AE2CraftingLens.LOGGER.debug("Error calling stack() method: {}", e.getMessage());
+                        }
+                    }
+                    
+                    // 方法3: 尝试从getType方法获取
+                    if (aeKey == null) {
+                        try {
+                            Method getTypeMethod = hoveredStack.getClass().getMethod("getType");
+                            aeKey = getTypeMethod.invoke(hoveredStack);
+                            AE2CraftingLens.LOGGER.debug("AEKey found via getType(): {}", aeKey);
+                        } catch (Exception e) {
+                            AE2CraftingLens.LOGGER.debug("Error calling getType() method: {}", e.getMessage());
+                        }
+                    }
+                    
+                    // 方法4: 尝试从getItem方法获取并转换为AEKey
+                    if (aeKey == null) {
+                        try {
+                            Method getItemMethod = hoveredStack.getClass().getMethod("getItem");
+                            Object item = getItemMethod.invoke(hoveredStack);
+                            if (item != null) {
+                                try {
+                                    Class<?> aeApiClass = Class.forName("appeng.api.stacks.AEApi");
+                                    Method getKeyMethod = aeApiClass.getMethod("key");
+                                    Object keyHelper = getKeyMethod.invoke(null);
+                                    Method ofItemMethod = keyHelper.getClass().getMethod("of", net.minecraft.world.item.ItemStack.class);
+                                    aeKey = ofItemMethod.invoke(keyHelper, hoveredStack);
+                                    AE2CraftingLens.LOGGER.debug("AEKey found via AEApi.key().of(): {}", aeKey);
+                                } catch (Exception e) {
+                                    AE2CraftingLens.LOGGER.debug("Error creating AEKey from ItemStack: {}", e.getMessage());
+                                }
+                            }
+                        } catch (Exception e) {
+                            AE2CraftingLens.LOGGER.debug("Error calling getItem() method: {}", e.getMessage());
+                        }
+                    }
+                    
+                    if (aeKey != null) {
+                        try {
+                            Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
+                            if (aeKeyClass.isInstance(aeKey)) {
+                                RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey);
+                                AE2CraftingLens.LOGGER.debug("Sending RequestPatternProvidersPacket for: {}", aeKey);
+                                PacketDistributor.sendToServer(packet);
+                                event.setCanceled(true);
+                                AE2CraftingLens.LOGGER.debug("Event canceled to prevent additional actions");
+                                return;
+                            }
+                        } catch (ClassNotFoundException e) {
+                            AE2CraftingLens.LOGGER.error("AEKey class not found", e);
+                        }
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.error("Error processing hoveredStack: {}", e.getMessage());
+                } finally {
+                    // 无论是否找到 AEKey，都取消事件，防止尝试打开被指向的方块
+                    // 这是为了避免在处理流体合成时出现 NPE 错误
                     event.setCanceled(true);
                     AE2CraftingLens.LOGGER.debug("Event canceled to prevent opening targeted blocks");
                 }

@@ -34,10 +34,12 @@ Thumbs.db
 *.swo
 
 # Archive files
-*.jar
 *.zip
 *.tar.gz
 *.rar
+
+# Exclude build artifacts but not gradle wrapper
+/build/**/*.jar
 
 # IDE specific
 .project
