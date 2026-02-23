@@ -275,6 +275,28 @@ public class PatternProviderRequestHandler {
                     return positions;
                 }
                 
+                // 在循环外部获取 grid 和 craftingService，因为它们对所有 CPU 都是一样的
+                Object grid = null;
+                Object craftingService = null;
+                try {
+                    Field gridField = menu.getClass().getDeclaredField("grid");
+                    gridField.setAccessible(true);
+                    grid = gridField.get(menu);
+                    AE2CraftingLens.LOGGER.info("Got grid from menu: {}", grid);
+                    
+                    if (grid != null) {
+                        craftingService = invokeMethod(grid, "getCraftingService", Object.class);
+                        AE2CraftingLens.LOGGER.info("Got craftingService from grid: {}", craftingService);
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.error("Error getting grid or craftingService: {}", e.getMessage(), e);
+                }
+                
+                if (grid == null || craftingService == null) {
+                    AE2CraftingLens.LOGGER.warn("Cannot proceed without grid or craftingService");
+                    return positions;
+                }
+                
                 int cpuCount = 0;
                 for (Object cpu : cpus) {
                     cpuCount++;
@@ -301,79 +323,67 @@ public class PatternProviderRequestHandler {
                         if (currentJob != null) {
                             AE2CraftingLens.LOGGER.info("Found active job on CPU {}: {}", cpuCount, currentJob);
                             
-                            // 获取 grid
-                            Object grid = null;
+                            // 使用已经获取的 craftingService
+                            // currentJob 可能是 GenericStack 类型，需要获取 what 字段
+                            Object aeKey = null;
                             try {
-                                Field gridField = menu.getClass().getDeclaredField("grid");
-                                gridField.setAccessible(true);
-                                grid = gridField.get(menu);
-                                AE2CraftingLens.LOGGER.info("Got grid for CPU {}: {}", cpuCount, grid);
+                                // 尝试从 GenericStack 获取 what 字段 (AEKey)
+                                Method whatMethod = currentJob.getClass().getMethod("what");
+                                aeKey = whatMethod.invoke(currentJob);
+                                AE2CraftingLens.LOGGER.info("Found AEKey from currentJob: {}", aeKey);
                             } catch (Exception e) {
-                                AE2CraftingLens.LOGGER.error("Error getting grid for CPU {}: {}", cpuCount, e.getMessage());
+                                AE2CraftingLens.LOGGER.debug("Error getting what from currentJob: {}", e.getMessage());
                             }
                             
-                            if (grid != null) {
-                                Object craftingService = invokeMethod(grid, "getCraftingService", Object.class);
-                                AE2CraftingLens.LOGGER.info("Got craftingService for CPU {}: {}", cpuCount, craftingService);
-                                if (craftingService != null) {
-                                    // currentJob 可能是 GenericStack 类型，需要获取 what 字段
-                                    Object aeKey = null;
-                                    try {
-                                        // 尝试从 GenericStack 获取 what 字段 (AEKey)
-                                        Method whatMethod = currentJob.getClass().getMethod("what");
-                                        aeKey = whatMethod.invoke(currentJob);
-                                        AE2CraftingLens.LOGGER.info("Found AEKey from currentJob: {}", aeKey);
-                                    } catch (Exception e) {
-                                        AE2CraftingLens.LOGGER.debug("Error getting what from currentJob: {}", e.getMessage());
-                                    }
+                            if (aeKey != null) {
+                                AE2CraftingLens.LOGGER.info("Using AEKey to find patterns: {}", aeKey);
+                                // 使用 AEKey 查找对应的样板
+                                try {
+                                    Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
+                                    Class<?> patternDetailsClass = Class.forName("appeng.api.crafting.IPatternDetails");
                                     
-                                    if (aeKey != null) {
-                                        AE2CraftingLens.LOGGER.info("Using AEKey to find patterns: {}", aeKey);
-                                        // 使用 AEKey 查找对应的样板
-                                        Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
-                                        Class<?> patternDetailsClass = Class.forName("appeng.api.crafting.IPatternDetails");
-                                        
-                                        Method getCraftingForMethod = craftingService.getClass().getMethod("getCraftingFor", aeKeyClass);
-                                        Iterable<?> patterns = (Iterable<?>) getCraftingForMethod.invoke(craftingService, aeKey);
-                                        
-                                        if (patterns != null) {
-                                            int patternCount = 0;
-                                            for (Object pattern : patterns) {
-                                                patternCount++;
-                                                AE2CraftingLens.LOGGER.info("Found pattern {}: {}", patternCount, pattern);
-                                                try {
-                                                    Method getProvidersMethod = craftingService.getClass().getMethod("getProviders", patternDetailsClass);
-                                                    Iterable<?> providers = (Iterable<?>) getProvidersMethod.invoke(craftingService, pattern);
-                                                    
-                                                    if (providers != null) {
-                                                        int providerCount = 0;
-                                                        for (Object provider : providers) {
-                                                            providerCount++;
-                                                            AE2CraftingLens.LOGGER.info("Found provider {}: {}", providerCount, provider);
-                                                            BlockPos pos = getProviderPosition(provider);
-                                                            if (pos != null) {
-                                                                positions.add(pos);
-                                                                AE2CraftingLens.LOGGER.info("Found provider at {} for active job", pos);
-                                                            } else {
-                                                                AE2CraftingLens.LOGGER.warn("Could not get position for provider: {}", provider);
-                                                            }
+                                    Method getCraftingForMethod = craftingService.getClass().getMethod("getCraftingFor", aeKeyClass);
+                                    Iterable<?> patterns = (Iterable<?>) getCraftingForMethod.invoke(craftingService, aeKey);
+                                    
+                                    if (patterns != null) {
+                                        int patternCount = 0;
+                                        for (Object pattern : patterns) {
+                                            patternCount++;
+                                            AE2CraftingLens.LOGGER.info("Found pattern {}: {}", patternCount, pattern);
+                                            try {
+                                                Method getProvidersMethod = craftingService.getClass().getMethod("getProviders", patternDetailsClass);
+                                                Iterable<?> providers = (Iterable<?>) getProvidersMethod.invoke(craftingService, pattern);
+                                                
+                                                if (providers != null) {
+                                                    int providerCount = 0;
+                                                    for (Object provider : providers) {
+                                                        providerCount++;
+                                                        AE2CraftingLens.LOGGER.info("Found provider {}: {}", providerCount, provider);
+                                                        BlockPos pos = getProviderPosition(provider);
+                                                        if (pos != null) {
+                                                            positions.add(pos);
+                                                            AE2CraftingLens.LOGGER.info("Found provider at {} for active job", pos);
+                                                        } else {
+                                                            AE2CraftingLens.LOGGER.warn("Could not get position for provider: {}", provider);
                                                         }
-                                                        AE2CraftingLens.LOGGER.info("Total providers found for pattern: {}", providerCount);
-                                                    } else {
-                                                        AE2CraftingLens.LOGGER.info("No providers found for pattern");
                                                     }
-                                                } catch (Exception e) {
-                                                    AE2CraftingLens.LOGGER.error("Error getting providers for pattern: {}", e.getMessage(), e);
+                                                    AE2CraftingLens.LOGGER.info("Total providers found for pattern: {}", providerCount);
+                                                } else {
+                                                    AE2CraftingLens.LOGGER.info("No providers found for pattern");
                                                 }
+                                            } catch (Exception e) {
+                                                AE2CraftingLens.LOGGER.error("Error getting providers for pattern: {}", e.getMessage(), e);
                                             }
-                                            AE2CraftingLens.LOGGER.info("Total patterns found: {}", patternCount);
-                                        } else {
-                                            AE2CraftingLens.LOGGER.info("No patterns found for AEKey: {}", aeKey);
                                         }
+                                        AE2CraftingLens.LOGGER.info("Total patterns found: {}", patternCount);
                                     } else {
-                                        AE2CraftingLens.LOGGER.warn("AEKey is null, cannot find patterns");
+                                        AE2CraftingLens.LOGGER.info("No patterns found for AEKey: {}", aeKey);
                                     }
+                                } catch (Exception e) {
+                                    AE2CraftingLens.LOGGER.error("Error finding patterns for AEKey: {}", e.getMessage(), e);
                                 }
+                            } else {
+                                AE2CraftingLens.LOGGER.warn("AEKey is null, cannot find patterns");
                             }
                         }
                     } catch (Exception e) {
