@@ -279,9 +279,24 @@ public class PatternProviderRequestHandler {
                 for (Object cpu : cpus) {
                     cpuCount++;
                     try {
-                        // 尝试获取当前作业
-                        Method getCurrentJobMethod = cpu.getClass().getMethod("getCurrentJob");
-                        Object currentJob = getCurrentJobMethod.invoke(cpu);
+                        // 尝试获取当前作业 - 直接访问字段
+                        Object currentJob = null;
+                        try {
+                            Field currentJobField = cpu.getClass().getDeclaredField("currentJob");
+                            currentJobField.setAccessible(true);
+                            currentJob = currentJobField.get(cpu);
+                            AE2CraftingLens.LOGGER.info("Got currentJob field for CPU {}: {}", cpuCount, currentJob);
+                        } catch (Exception e) {
+                            AE2CraftingLens.LOGGER.debug("Error getting currentJob field: {}", e.getMessage());
+                            // 备选：尝试方法
+                            try {
+                                Method getCurrentJobMethod = cpu.getClass().getMethod("getCurrentJob");
+                                currentJob = getCurrentJobMethod.invoke(cpu);
+                                AE2CraftingLens.LOGGER.info("Got currentJob via method for CPU {}: {}", cpuCount, currentJob);
+                            } catch (Exception ex) {
+                                AE2CraftingLens.LOGGER.debug("Error getting currentJob method: {}", ex.getMessage());
+                            }
+                        }
                         
                         if (currentJob != null) {
                             AE2CraftingLens.LOGGER.info("Found active job on CPU {}: {}", cpuCount, currentJob);
