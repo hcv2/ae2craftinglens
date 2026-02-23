@@ -123,8 +123,9 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                 // 显示详细信息
                 try {
                     Class<?> componentClass = Class.forName("net.minecraft.network.chat.Component");
-                    Class<?> translatableClass = Class.forName("net.minecraft.network.chat.TranslatableComponent");
-                    Object message = translatableClass.getConstructor(String.class, Object[].class).newInstance(
+                    // 使用 Component.translatable() 方法
+                    Method translatableMethod = componentClass.getMethod("translatable", String.class, Object[].class);
+                    Object message = translatableMethod.invoke(null, 
                             "message.ae2craftinglens.highlighted_providers", 
                             new Object[]{packet.positions().size()}
                     );
@@ -152,26 +153,23 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             double distance = Math.sqrt(distanceSqr);
                             AE2CraftingLens.LOGGER.info("Distance: {} blocks", distance);
                             
-                            // 创建可点击的坐标组件
-                            Class<?> literalClass = Class.forName("net.minecraft.network.chat.LiteralComponent");
-                            Object baseMessage = literalClass.getConstructor(String.class).newInstance("Provider " + index + ": ");
+                            // 使用 Component.literal() 创建文本组件
+                            Method literalMethod = componentClass.getMethod("literal", String.class);
+                            Object baseMessage = literalMethod.invoke(null, "Provider " + index + ": ");
                             
                             // 添加维度信息
-                            Object dimComponent = literalClass.getConstructor(String.class).newInstance(dimensionStr);
-                            Method withStyleMethod = componentClass.getMethod("withStyle", net.minecraft.network.chat.Style.class);
+                            Object dimComponent = literalMethod.invoke(null, dimensionStr);
                             
-                            // 创建样式
+                            // 创建样式 - 使用 Style.EMPTY.copy()
                             Class<?> styleClass = Class.forName("net.minecraft.network.chat.Style");
+                            Object emptyStyle = styleClass.getField("EMPTY").get(null);
+                            Method copyMethod = styleClass.getMethod("copy");
+                            Object style = copyMethod.invoke(emptyStyle);
+                            
+                            // 设置颜色 - 使用 TextColor.fromRgb()
                             Class<?> textColorClass = Class.forName("net.minecraft.network.chat.TextColor");
                             Method fromRgbMethod = textColorClass.getMethod("fromRgb", int.class);
                             Object textColor = fromRgbMethod.invoke(null, 0x00FFFF);
-                            
-                            // 获取Style.EMPTY实例
-                            Object emptyStyle = styleClass.getField("EMPTY").get(null);
-                            Method styleBuilderMethod = styleClass.getMethod("copy");
-                            Object style = styleBuilderMethod.invoke(emptyStyle);
-                            
-                            // 设置颜色
                             Method withColorMethod = styleClass.getMethod("withColor", textColorClass);
                             style = withColorMethod.invoke(style, textColor);
                             
@@ -196,7 +194,7 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             Class<?> hoverEventClass = Class.forName("net.minecraft.network.chat.HoverEvent");
                             Class<?> hoverEventActionClass = Class.forName("net.minecraft.network.chat.HoverEvent$Action");
                             Object showTextAction = hoverEventActionClass.getField("SHOW_TEXT").get(null);
-                            Object hoverText = literalClass.getConstructor(String.class).newInstance("Click to teleport to this dimension");
+                            Object hoverText = literalMethod.invoke(null, "Click to teleport to this dimension");
                             Object hoverEvent = hoverEventClass.getConstructor(hoverEventActionClass, componentClass).newInstance(
                                     showTextAction, 
                                     hoverText
@@ -206,19 +204,20 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             Method withHoverEventMethod = styleClass.getMethod("withHoverEvent", hoverEventClass);
                             style = withHoverEventMethod.invoke(style, hoverEvent);
                             
-                            // 应用样式
+                            // 应用样式 - 使用 Component#withStyle
+                            Method withStyleMethod = componentClass.getMethod("withStyle", styleClass);
                             dimComponent = withStyleMethod.invoke(dimComponent, style);
                             
                             // 追加到消息
                             Method appendMethod = componentClass.getMethod("append", componentClass);
                             baseMessage = appendMethod.invoke(baseMessage, dimComponent);
-                            baseMessage = appendMethod.invoke(baseMessage, literalClass.getConstructor(String.class).newInstance(" at "));
+                            baseMessage = appendMethod.invoke(baseMessage, literalMethod.invoke(null, " at "));
                             
                             // 添加坐标信息
-                            Object posComponent = literalClass.getConstructor(String.class).newInstance(pos.getX() + ", " + pos.getY() + ", " + pos.getZ());
+                            Object posComponent = literalMethod.invoke(null, pos.getX() + ", " + pos.getY() + ", " + pos.getZ());
                             
                             // 创建坐标样式
-                            style = styleBuilderMethod.invoke(emptyStyle);
+                            style = copyMethod.invoke(emptyStyle);
                             style = withColorMethod.invoke(style, fromRgbMethod.invoke(null, 0x00FF00));
                             style = withUnderlinedMethod.invoke(style, true);
                             
@@ -230,7 +229,7 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             style = withClickEventMethod.invoke(style, clickEvent);
                             
                             // 设置悬停事件
-                            hoverText = literalClass.getConstructor(String.class).newInstance("Click to teleport to this position");
+                            hoverText = literalMethod.invoke(null, "Click to teleport to this position");
                             hoverEvent = hoverEventClass.getConstructor(hoverEventActionClass, componentClass).newInstance(
                                     showTextAction, 
                                     hoverText
@@ -240,15 +239,15 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             // 应用样式
                             posComponent = withStyleMethod.invoke(posComponent, style);
                             baseMessage = appendMethod.invoke(baseMessage, posComponent);
-                            baseMessage = appendMethod.invoke(baseMessage, literalClass.getConstructor(String.class).newInstance(" ("));
+                            baseMessage = appendMethod.invoke(baseMessage, literalMethod.invoke(null, " ("));
                             
                             // 添加距离信息
-                            Object distanceComponent = literalClass.getConstructor(String.class).newInstance(String.format("%.1f blocks", distance));
-                            style = styleBuilderMethod.invoke(emptyStyle);
+                            Object distanceComponent = literalMethod.invoke(null, String.format("%.1f blocks", distance));
+                            style = copyMethod.invoke(emptyStyle);
                             style = withColorMethod.invoke(style, fromRgbMethod.invoke(null, 0xFFFF00));
                             distanceComponent = withStyleMethod.invoke(distanceComponent, style);
                             baseMessage = appendMethod.invoke(baseMessage, distanceComponent);
-                            baseMessage = appendMethod.invoke(baseMessage, literalClass.getConstructor(String.class).newInstance(")"));
+                            baseMessage = appendMethod.invoke(baseMessage, literalMethod.invoke(null, ")"));
                             
                             // 显示消息
                             displayClientMessageMethod.invoke(player, baseMessage, false);
