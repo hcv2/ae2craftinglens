@@ -507,14 +507,19 @@ public class CraftingScreenHandler {
             int itemX, itemY, itemWidth, itemHeight;
             
             if (isCraftingStatusScreen) {
-                // 对于 CraftingStatusScreen，使用从 AE2 源代码分析得出的精确位置
-                itemX = 57;
-                itemY = 22;
-                itemWidth = 152;
-                itemHeight = 16;
-                AE2CraftingLens.LOGGER.info("Using precise CraftingStatusScreen detection area based on AE2 source code");
+                // 对于 CraftingStatusScreen，使用从 AE2 源代码分析得出的精确表格位置
+                // 表格起始位置: (9, 19) (来自 CraftingCPUScreen.java: new CraftingStatusTableRenderer(this, 9, 19))
+                // 单元格宽度: 67, 高度: 22, 列数: 3, 单元格边框: 1
+                // 表格宽度: 3 * (67 + 1) = 204
+                // 使用表格区域进行检测，后续会进一步精确定位到具体单元格
+                itemX = 9;
+                itemY = 19;
+                itemWidth = 204;
+                itemHeight = 22; // 单个单元格高度
+                AE2CraftingLens.LOGGER.info("Using precise CraftingStatusScreen detection area based on AE2 source code (table area)");
             } else if (isWCTScreen) {
                 // 对于 WCTScreen（无线通用终端），根据日志中的鼠标坐标(183.0, 9.0)调整
+                // 无线终端可能使用不同的布局，暂时保持原有值
                 itemX = 57;
                 itemY = 9;
                 itemWidth = 152;
@@ -531,7 +536,8 @@ public class CraftingScreenHandler {
             
             // 检查鼠标是否在备用物品区域内 - 支持多行制作任务和滚动
             boolean isOnItem = false;
-            int rowHeight = itemHeight;
+            // 单元格高度22 + 边框1 = 23像素行高
+            int rowHeight = 23;
             
             // 支持最多20行制作任务（考虑滚动和大量任务）
             int maxRows = 20;
@@ -554,13 +560,20 @@ public class CraftingScreenHandler {
             
             for (int row = startRow; row <= endRow; row++) {
                 int currentItemY = itemY + row * rowHeight;
+                // 单元格宽度67，列数3，边框1，所以每个单元格宽度68，但整个表格宽度是204
+                // 检查鼠标是否在表格宽度内
                 boolean isOnCurrentRow = relativeX >= itemX && relativeX < itemX + itemWidth && 
-                                        relativeY >= currentItemY && relativeY < currentItemY + rowHeight;
+                                        relativeY >= currentItemY && relativeY < currentItemY + itemHeight;
                 
                 if (isOnCurrentRow) {
-                    isOnItem = true;
-                    AE2CraftingLens.LOGGER.info("Click detected on crafting item row {} at y={} (deltaY={})", row, currentItemY, deltaY);
-                    break;
+                    // 进一步计算点击在哪个列（单元格）内
+                    int cellXOffset = (int)(relativeX - itemX);
+                    int cellCol = cellXOffset / 68; // 单元格宽度+边框
+                    if (cellCol >= 0 && cellCol < 3) {
+                        isOnItem = true;
+                        AE2CraftingLens.LOGGER.info("Click detected on crafting item row {}, col {} at y={} (deltaY={})", row, cellCol, currentItemY, deltaY);
+                        break;
+                    }
                 }
             }
             
@@ -570,7 +583,7 @@ public class CraftingScreenHandler {
                         relativeX, relativeY, itemX, itemY, rowHeight, deltaY, closestRow);
             }
             
-            AE2CraftingLens.LOGGER.info("Checking crafting item area: GUI({}, {}), relative mouse: ({}, {}), item area: ({}, {}) size ({}, {}), rows checked: {}-{}, result: {}",
+            AE2CraftingLens.LOGGER.info("Checking crafting item area: GUI({}, {}), relative mouse: ({}, {}), table area: ({}, {}) size ({}, {}), cell size: 67x22, rows checked: {}-{}, result: {}",
                     guiLeft, guiTop, relativeX, relativeY, itemX, itemY, itemWidth, itemHeight, startRow, endRow, isOnItem);
             
             return isOnItem;
