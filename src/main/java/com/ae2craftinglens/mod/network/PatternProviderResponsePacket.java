@@ -184,20 +184,64 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             Method withColorMethod = styleClass.getMethod("withColor", textColorClass);
                             style = withColorMethod.invoke(style, textColor);
                             
-                            // 设置下划线 - 尝试多个可能的方法名，因为Minecraft 1.21.1的API可能已更改
+                            // 设置下划线 - 尝试多个可能的方法名和参数类型，因为Minecraft 1.21.1的API可能已更改
                             Method withUnderlinedMethod = null;
-                            String[] methodNames = {"withUnderlined", "withUnderlined", "setUnderlined", "underlined", "withUnderline"};
-                            for (String methodName : methodNames) {
+                            // 尝试所有可能的方法名和参数组合
+                            Object[][] methodAttempts = {
+                                {"withUnderlined", boolean.class},
+                                {"withUnderlined", Boolean.class},
+                                {"setUnderlined", boolean.class},
+                                {"setUnderlined", Boolean.class},
+                                {"underlined", boolean.class},
+                                {"underlined", Boolean.class},
+                                {"withUnderline", boolean.class},
+                                {"withUnderline", Boolean.class},
+                                {"underline", boolean.class},
+                                {"underline", Boolean.class},
+                                {"setUnderline", boolean.class},
+                                {"setUnderline", Boolean.class},
+                                {"withUnderlinedBoolean", boolean.class},
+                                {"withUnderlinedBoolean", Boolean.class},
+                                {"withUnderlined"}, // 无参数方法
+                                {"underlined"}, // 无参数方法
+                                {"withUnderline"}, // 无参数方法
+                                {"underline"}, // 无参数方法
+                            };
+                            
+                            for (Object[] attempt : methodAttempts) {
                                 try {
-                                    withUnderlinedMethod = styleClass.getMethod(methodName, boolean.class);
-                                    break;
+                                    if (attempt.length == 1) {
+                                        withUnderlinedMethod = styleClass.getMethod((String)attempt[0]);
+                                    } else if (attempt.length == 2) {
+                                        withUnderlinedMethod = styleClass.getMethod((String)attempt[0], (Class<?>)attempt[1]);
+                                    } else if (attempt.length == 3) {
+                                        withUnderlinedMethod = styleClass.getMethod((String)attempt[0], (Class<?>)attempt[1], (Class<?>)attempt[2]);
+                                    }
+                                    if (withUnderlinedMethod != null) {
+                                        break;
+                                    }
                                 } catch (NoSuchMethodException e) {
-                                    // 继续尝试下一个方法名
+                                    // 继续尝试下一个组合
                                 }
                             }
                             
                             if (withUnderlinedMethod != null) {
-                                style = withUnderlinedMethod.invoke(style, true);
+                                try {
+                                    // 根据参数数量调用方法
+                                    int paramCount = withUnderlinedMethod.getParameterCount();
+                                    if (paramCount == 0) {
+                                        // 无参数方法 - 可能返回新的Style实例
+                                        style = withUnderlinedMethod.invoke(style);
+                                    } else if (paramCount == 1) {
+                                        // 单参数方法 - 传递true
+                                        style = withUnderlinedMethod.invoke(style, true);
+                                    } else if (paramCount == 2) {
+                                        // 双参数方法 - 传递true和可能的其他参数
+                                        style = withUnderlinedMethod.invoke(style, true, false);
+                                    }
+                                } catch (Exception e) {
+                                    AE2CraftingLens.LOGGER.error("Error calling underlined method", e);
+                                }
                             } else {
                                 AE2CraftingLens.LOGGER.warn("Could not find underlined method for Style class, skipping underline");
                             }
@@ -220,10 +264,78 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             Class<?> hoverEventActionClass = Class.forName("net.minecraft.network.chat.HoverEvent$Action");
                             Object showTextAction = hoverEventActionClass.getField("SHOW_TEXT").get(null);
                             Object hoverText = literalMethod.invoke(null, "Click to teleport to this dimension");
-                            Object hoverEvent = hoverEventClass.getConstructor(hoverEventActionClass, componentClass).newInstance(
-                                    showTextAction, 
-                                    hoverText
-                            );
+                            // 创建final副本供lambda使用
+                            final Object finalShowTextAction = showTextAction;
+                            final Object finalHoverText = hoverText;
+                            // 尝试多种方式创建HoverEvent（兼容Minecraft 1.21.1 API变化）
+                            Object hoverEvent = null;
+                            
+                            // 尝试多个构造函数和工厂方法
+                            java.util.List<java.util.function.Supplier<Object>> hoverEventAttempts = new java.util.ArrayList<>();
+                            
+                            // 1. 原始构造函数：HoverEvent(HoverEvent.Action, Component)
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    return hoverEventClass.getConstructor(hoverEventActionClass, componentClass)
+                                            .newInstance(finalShowTextAction, finalHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 2. 可能的其他构造函数变体
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    return hoverEventClass.getConstructor(hoverEventActionClass, componentClass, String.class)
+                                            .newInstance(finalShowTextAction, finalHoverText, "");
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 3. 静态工厂方法：HoverEvent.of(Action, Component)
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    java.lang.reflect.Method ofMethod = hoverEventClass.getMethod("of", hoverEventActionClass, componentClass);
+                                    return ofMethod.invoke(null, finalShowTextAction, finalHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 4. 静态工厂方法：HoverEvent.create(Action, Component)
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    java.lang.reflect.Method createMethod = hoverEventClass.getMethod("create", hoverEventActionClass, componentClass);
+                                    return createMethod.invoke(null, finalShowTextAction, finalHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 5. 特定工厂方法：HoverEvent.showText(Component)
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    java.lang.reflect.Method showTextMethod = hoverEventClass.getMethod("showText", componentClass);
+                                    return showTextMethod.invoke(null, finalHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 尝试所有方法
+                            for (java.util.function.Supplier<Object> attempt : hoverEventAttempts) {
+                                hoverEvent = attempt.get();
+                                if (hoverEvent != null) {
+                                    AE2CraftingLens.LOGGER.debug("Successfully created HoverEvent using method {}", hoverEventAttempts.indexOf(attempt) + 1);
+                                    break;
+                                }
+                            }
+                            
+                            if (hoverEvent == null) {
+                                AE2CraftingLens.LOGGER.error("Could not create HoverEvent - all methods failed");
+                                throw new RuntimeException("Failed to create HoverEvent");
+                            }
                             
                             // 设置悬停事件
                             Method withHoverEventMethod = styleClass.getMethod("withHoverEvent", hoverEventClass);
@@ -259,10 +371,80 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             
                             // 设置悬停事件
                             hoverText = literalMethod.invoke(null, "Click to teleport to this position");
-                            hoverEvent = hoverEventClass.getConstructor(hoverEventActionClass, componentClass).newInstance(
-                                    showTextAction, 
-                                    hoverText
-                            );
+                            // 创建final副本供lambda使用
+                            final Object finalPositionShowTextAction = showTextAction;
+                            final Object finalPositionHoverText = hoverText;
+                            // 尝试多种方式创建HoverEvent（兼容Minecraft 1.21.1 API变化）
+                            Object newHoverEvent = null;
+                            
+                            // 尝试多个构造函数和工厂方法
+                            java.util.List<java.util.function.Supplier<Object>> positionHoverEventAttempts = new java.util.ArrayList<>();
+                            
+                            // 1. 原始构造函数：HoverEvent(HoverEvent.Action, Component)
+                            positionHoverEventAttempts.add(() -> {
+                                try {
+                                    return hoverEventClass.getConstructor(hoverEventActionClass, componentClass)
+                                            .newInstance(finalPositionShowTextAction, finalPositionHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 2. 可能的其他构造函数变体
+                            positionHoverEventAttempts.add(() -> {
+                                try {
+                                    return hoverEventClass.getConstructor(hoverEventActionClass, componentClass, String.class)
+                                            .newInstance(finalPositionShowTextAction, finalPositionHoverText, "");
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 3. 静态工厂方法：HoverEvent.of(Action, Component)
+                            positionHoverEventAttempts.add(() -> {
+                                try {
+                                    java.lang.reflect.Method ofMethod = hoverEventClass.getMethod("of", hoverEventActionClass, componentClass);
+                                    return ofMethod.invoke(null, finalPositionShowTextAction, finalPositionHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 4. 静态工厂方法：HoverEvent.create(Action, Component)
+                            positionHoverEventAttempts.add(() -> {
+                                try {
+                                    java.lang.reflect.Method createMethod = hoverEventClass.getMethod("create", hoverEventActionClass, componentClass);
+                                    return createMethod.invoke(null, finalPositionShowTextAction, finalPositionHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 5. 特定工厂方法：HoverEvent.showText(Component)
+                            positionHoverEventAttempts.add(() -> {
+                                try {
+                                    java.lang.reflect.Method showTextMethod = hoverEventClass.getMethod("showText", componentClass);
+                                    return showTextMethod.invoke(null, finalPositionHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 尝试所有方法
+                            for (java.util.function.Supplier<Object> attempt : positionHoverEventAttempts) {
+                                newHoverEvent = attempt.get();
+                                if (newHoverEvent != null) {
+                                    AE2CraftingLens.LOGGER.debug("Successfully created HoverEvent for position using method {}", positionHoverEventAttempts.indexOf(attempt) + 1);
+                                    break;
+                                }
+                            }
+                            
+                            if (newHoverEvent == null) {
+                                AE2CraftingLens.LOGGER.error("Could not create HoverEvent for position - all methods failed");
+                                throw new RuntimeException("Failed to create HoverEvent for position");
+                            }
+                            
+                            hoverEvent = newHoverEvent;
                             style = withHoverEventMethod.invoke(style, hoverEvent);
                             
                             // 应用样式

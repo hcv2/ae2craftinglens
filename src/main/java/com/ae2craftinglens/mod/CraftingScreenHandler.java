@@ -57,12 +57,56 @@ public class CraftingScreenHandler {
             return;
         }
         
-        // 使用更可靠的Shift键检测方法
-        boolean isShiftPressed = mc.options.keyShift.isDown();
-        AE2CraftingLens.LOGGER.info("Shift key pressed: {}", isShiftPressed);
+        // 使用多种方法检测Shift键，确保可靠性
+        boolean isShiftPressed = false;
+        
+        // 方法1: 尝试使用事件本身的hasShiftDown方法（如果可用）
+        try {
+            java.lang.reflect.Method hasShiftDownMethod = event.getClass().getMethod("hasShiftDown");
+            isShiftPressed = (boolean) hasShiftDownMethod.invoke(event);
+            AE2CraftingLens.LOGGER.info("Shift detection via event.hasShiftDown(): {}", isShiftPressed);
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("Event.hasShiftDown() not available: {}", e.getMessage());
+        }
+        
+        // 方法2: 如果方法1失败，尝试使用屏幕的hasShiftDown方法
+        if (!isShiftPressed) {
+            try {
+                // 使用已存在的screen变量
+                java.lang.reflect.Method hasShiftDownMethod = screen.getClass().getMethod("hasShiftDown");
+                isShiftPressed = (boolean) hasShiftDownMethod.invoke(screen);
+                AE2CraftingLens.LOGGER.info("Shift detection via screen.hasShiftDown(): {}", isShiftPressed);
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Screen.hasShiftDown() not available: {}", e.getMessage());
+            }
+        }
+        
+        // 方法3: 回退到原始的键位绑定检测
+        if (!isShiftPressed) {
+            isShiftPressed = mc.options.keyShift.isDown();
+            AE2CraftingLens.LOGGER.info("Shift detection via key binding: {}", isShiftPressed);
+        }
+        
+        // 方法4: 检查键盘状态（最底层的检测）
+        if (!isShiftPressed) {
+            try {
+                // 使用Minecraft的Keyboard类检查Shift键状态
+                Class<?> keyboardClass = Class.forName("com.mojang.blaze3d.platform.InputConstants");
+                java.lang.reflect.Method isKeyDownMethod = keyboardClass.getMethod("isKeyDown", int.class);
+                // Shift键的键盘码：左Shift=340，右Shift=344
+                boolean leftShift = (boolean) isKeyDownMethod.invoke(null, 340);
+                boolean rightShift = (boolean) isKeyDownMethod.invoke(null, 344);
+                isShiftPressed = leftShift || rightShift;
+                AE2CraftingLens.LOGGER.info("Shift detection via raw keyboard (L:{}, R:{}): {}", leftShift, rightShift, isShiftPressed);
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Raw keyboard detection failed: {}", e.getMessage());
+            }
+        }
+        
+        AE2CraftingLens.LOGGER.info("Final shift key pressed: {}", isShiftPressed);
         
         // 测试模式：暂时允许不按Shift键
-        boolean testMode = true;
+        boolean testMode = false;
         AE2CraftingLens.LOGGER.info("Test mode: {}", testMode);
         
         if (!isShiftPressed && !testMode) {
@@ -89,9 +133,21 @@ public class CraftingScreenHandler {
         AE2CraftingLens.LOGGER.info("Event canceled to prevent opening targeted blocks");
         
         try {
-            // 使用提取的 AEKey（可能为 null）
-            AE2CraftingLens.LOGGER.info("Using extracted AEKey: {}", lastClickedAEKey);
-            RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(lastClickedAEKey);
+            // 优先从选中的CPU提取AEKey（减少UI反射依赖）
+            Object aeKey = extractAEKeyFromSelectedCpu();
+            if (aeKey == null) {
+                // 回退到UI反射提取的AEKey
+                aeKey = lastClickedAEKey;
+                AE2CraftingLens.LOGGER.info("Using UI-extracted AEKey: {}", aeKey);
+            } else {
+                AE2CraftingLens.LOGGER.info("Using CPU-extracted AEKey: {}", aeKey);
+            }
+            
+            if (aeKey == null) {
+                AE2CraftingLens.LOGGER.warn("No AEKey available, sending request without specific item");
+            }
+            
+            RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey);
             AE2CraftingLens.LOGGER.info("Sending RequestPatternProvidersPacket with AEKey");
             PacketDistributor.sendToServer(packet);
             AE2CraftingLens.LOGGER.info("Packet sent successfully");
@@ -113,34 +169,92 @@ public class CraftingScreenHandler {
             double mouseX = event.getMouseX();
             double mouseY = event.getMouseY();
             
-            // 使用反射获取屏幕上的渲染ables列表（包含按钮）
-            java.lang.reflect.Field renderablesField = screen.getClass().getDeclaredField("renderables");
-            renderablesField.setAccessible(true);
-            Iterable<?> renderables = (Iterable<?>) renderablesField.get(screen);
+            // 尝试从多个可能的字段中获取组件列表
+            String[] possibleFields = {"renderables", "children", "widgets", "buttons", "listeners"};
             
-            if (renderables != null) {
-                for (Object renderable : renderables) {
-                    // 检查是否是按钮（AbstractWidget的子类）
-                    if (renderable != null && renderable.getClass().getName().contains("Button")) {
-                        // 获取按钮的位置和大小
-                        java.lang.reflect.Method getXMethod = renderable.getClass().getMethod("getX");
-                        java.lang.reflect.Method getYMethod = renderable.getClass().getMethod("getY");
-                        java.lang.reflect.Method getWidthMethod = renderable.getClass().getMethod("getWidth");
-                        java.lang.reflect.Method getHeightMethod = renderable.getClass().getMethod("getHeight");
-                        
-                        int x = (int) getXMethod.invoke(renderable);
-                        int y = (int) getYMethod.invoke(renderable);
-                        int width = (int) getWidthMethod.invoke(renderable);
-                        int height = (int) getHeightMethod.invoke(renderable);
-                        
-                        // 检查鼠标是否在按钮区域内
-                        if (mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height) {
-                            AE2CraftingLens.LOGGER.info("Click detected on button at ({}, {}) size ({}, {})", x, y, width, height);
-                            return true;
+            for (String fieldName : possibleFields) {
+                try {
+                    java.lang.reflect.Field field = screen.getClass().getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object fieldValue = field.get(screen);
+                    if (fieldValue instanceof Iterable) {
+                        AE2CraftingLens.LOGGER.debug("Checking components in field: {}", fieldName);
+                        Iterable<?> components = (Iterable<?>) fieldValue;
+                        if (components != null) {
+                            for (Object component : components) {
+                                if (component == null) continue;
+                                
+                                String className = component.getClass().getName();
+                                // 扩展按钮检测范围：包括各种按钮和组件类型
+                                boolean isButton = className.contains("Button") || 
+                                                   className.contains("Widget") ||
+                                                   className.contains("ImageButton") ||
+                                                   className.contains("IconButton") ||
+                                                   className.contains("TextButton") ||
+                                                   className.contains("Pressable") ||
+                                                   className.contains("Clickable");
+                                
+                                if (isButton) {
+                                    // 获取按钮的位置和大小
+                                    try {
+                                        java.lang.reflect.Method getXMethod = component.getClass().getMethod("getX");
+                                        java.lang.reflect.Method getYMethod = component.getClass().getMethod("getY");
+                                        java.lang.reflect.Method getWidthMethod = component.getClass().getMethod("getWidth");
+                                        java.lang.reflect.Method getHeightMethod = component.getClass().getMethod("getHeight");
+                                        
+                                        int x = (int) getXMethod.invoke(component);
+                                        int y = (int) getYMethod.invoke(component);
+                                        int width = (int) getWidthMethod.invoke(component);
+                                        int height = (int) getHeightMethod.invoke(component);
+                                        
+                                        // 检查鼠标是否在按钮区域内
+                                        if (mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height) {
+                                            AE2CraftingLens.LOGGER.info("Click detected on button at ({}, {}) size ({}, {})", x, y, width, height);
+                                            
+                                            // 检查按钮文本是否与取消合成相关
+                                            try {
+                                                java.lang.reflect.Method getMessageMethod = component.getClass().getMethod("getMessage");
+                                                Object message = getMessageMethod.invoke(component);
+                                                if (message != null) {
+                                                    String messageStr = message.toString().toLowerCase();
+                                                    if (messageStr.contains("cancel") || messageStr.contains("stop") || 
+                                                        messageStr.contains("x") || messageStr.contains("删除") ||
+                                                        messageStr.contains("取消") || messageStr.contains("中止")) {
+                                                        AE2CraftingLens.LOGGER.info("Button appears to be a cancel button: {}", message);
+                                                    }
+                                                }
+                                            } catch (Exception e) {
+                                                // 忽略，不是所有按钮都有getMessage方法
+                                            }
+                                            
+                                            // 检查按钮是否有特定的标签或纹理标识
+                                            try {
+                                                java.lang.reflect.Field iconField = component.getClass().getDeclaredField("icon");
+                                                iconField.setAccessible(true);
+                                                Object icon = iconField.get(component);
+                                                if (icon != null && icon.toString().contains("cancel")) {
+                                                    AE2CraftingLens.LOGGER.info("Button has cancel icon");
+                                                }
+                                            } catch (Exception e) {
+                                                // 忽略
+                                            }
+                                            
+                                            return true;
+                                        }
+                                    } catch (Exception e) {
+                                        // 如果无法获取位置信息，跳过此按钮
+                                        AE2CraftingLens.LOGGER.debug("Error getting button position for {}: {}", className, e.getMessage());
+                                    }
+                                }
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    // 字段不存在，继续尝试下一个
+                    AE2CraftingLens.LOGGER.debug("Field {} not found: {}", fieldName, e.getMessage());
                 }
             }
+            
         } catch (Exception e) {
             // 如果反射失败，记录错误但不阻止事件处理
             AE2CraftingLens.LOGGER.debug("Error checking button click: {}", e.getMessage());
@@ -200,6 +314,90 @@ public class CraftingScreenHandler {
     }
     
     /**
+     * 从当前选中的合成CPU提取AEKey
+     * 通过直接访问CraftingStatusMenu，减少对UI反射的依赖
+     */
+    private Object extractAEKeyFromSelectedCpu() {
+        try {
+            // 获取Minecraft实例和玩家
+            Minecraft mc = Minecraft.getInstance();
+            if (mc == null || mc.player == null) {
+                AE2CraftingLens.LOGGER.debug("Minecraft or player not available");
+                return null;
+            }
+            
+            Object menu = mc.player.containerMenu;
+            if (menu == null) {
+                AE2CraftingLens.LOGGER.debug("Player has no open menu");
+                return null;
+            }
+            
+            String menuClassName = menu.getClass().getName();
+            if (!menuClassName.contains("CraftingStatusMenu")) {
+                AE2CraftingLens.LOGGER.debug("Menu is not CraftingStatusMenu: {}", menuClassName);
+                return null;
+            }
+            
+            AE2CraftingLens.LOGGER.info("Attempting to extract AEKey from CraftingStatusMenu");
+            
+            // 获取选中的CPU序列号
+            java.lang.reflect.Method getSelectedCpuSerialMethod = menu.getClass().getMethod("getSelectedCpuSerial");
+            int selectedCpuSerial = (int) getSelectedCpuSerialMethod.invoke(menu);
+            
+            if (selectedCpuSerial == -1) {
+                AE2CraftingLens.LOGGER.debug("No CPU selected");
+                return null;
+            }
+            
+            // 获取CPU列表
+            java.lang.reflect.Field cpuListField = menu.getClass().getDeclaredField("cpuList");
+            cpuListField.setAccessible(true);
+            Object cpuList = cpuListField.get(menu);
+            
+            // 获取cpus列表
+            java.lang.reflect.Method cpusMethod = cpuList.getClass().getMethod("cpus");
+            java.util.List<?> cpus = (java.util.List<?>) cpusMethod.invoke(cpuList);
+            
+            // 查找选中的CPU条目
+            for (Object cpuEntry : cpus) {
+                // 获取serial字段
+                java.lang.reflect.Method serialMethod = cpuEntry.getClass().getMethod("serial");
+                int serial = (int) serialMethod.invoke(cpuEntry);
+                
+                if (serial == selectedCpuSerial) {
+                    // 获取currentJob字段
+                    java.lang.reflect.Method currentJobMethod = cpuEntry.getClass().getMethod("currentJob");
+                    Object currentJob = currentJobMethod.invoke(cpuEntry);
+                    
+                    if (currentJob == null) {
+                        AE2CraftingLens.LOGGER.debug("Selected CPU has no current job");
+                        return null;
+                    }
+                    
+                    // 从GenericStack提取AEKey
+                    java.lang.reflect.Method whatMethod = currentJob.getClass().getMethod("what");
+                    Object aeKey = whatMethod.invoke(currentJob);
+                    
+                    if (aeKey != null) {
+                        AE2CraftingLens.LOGGER.info("Extracted AEKey from selected CPU {}: {}", serial, aeKey);
+                        return aeKey;
+                    } else {
+                        AE2CraftingLens.LOGGER.debug("GenericStack.what() returned null");
+                        return null;
+                    }
+                }
+            }
+            
+            AE2CraftingLens.LOGGER.debug("Selected CPU serial {} not found in CPU list", selectedCpuSerial);
+            return null;
+            
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("Error extracting AEKey from selected CPU: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
      * 检查点击是否在当前合成物品上
      * 通过检查屏幕上的所有可渲染对象，精确识别合成物品槽位
      */
@@ -228,11 +426,33 @@ public class CraftingScreenHandler {
                     Iterable<?> renderables = (Iterable<?>) renderablesField.get(screen);
                     
                     if (renderables != null) {
+                        int renderableCount = 0;
+                        java.util.List<String> renderableClassNames = new java.util.ArrayList<>();
                         for (Object renderable : renderables) {
+                            renderableCount++;
                             if (renderable != null) {
                                 String className = renderable.getClass().getName();
-                                // 检查是否是物品槽位（类名包含 Slot 或 Item）
-                                if (className.contains("Slot") || className.contains("Item")) {
+                                renderableClassNames.add(className);
+                                
+                                // 记录前几个renderable的详细信息用于调试
+                                if (renderableCount <= 10) {
+                                    AE2CraftingLens.LOGGER.debug("Renderable {}: {}", renderableCount, className);
+                                    try {
+                                        java.lang.reflect.Method getXMethod = renderable.getClass().getMethod("getX");
+                                        java.lang.reflect.Method getYMethod = renderable.getClass().getMethod("getY");
+                                        int x = (int) getXMethod.invoke(renderable);
+                                        int y = (int) getYMethod.invoke(renderable);
+                                        AE2CraftingLens.LOGGER.debug("  Position: ({}, {})", x, y);
+                                    } catch (Exception e) {
+                                        AE2CraftingLens.LOGGER.debug("  No position info");
+                                    }
+                                }
+                                
+                                // 检查是否是物品槽位（类名包含 Slot, Item, Crafting, Job, Task 等）
+                                if (className.contains("Slot") || className.contains("Item") || 
+                                    className.contains("Crafting") || className.contains("Job") || 
+                                    className.contains("Task") || className.contains("Stack") ||
+                                    className.contains("Renderable") && className.contains("Crafting")) {
                                     // 检查是否具有位置信息
                                     try {
                                         java.lang.reflect.Method getXMethod = renderable.getClass().getMethod("getX");
@@ -309,12 +529,49 @@ public class CraftingScreenHandler {
                 AE2CraftingLens.LOGGER.info("Using default detection area for unknown screen type");
             }
             
-            // 检查鼠标是否在备用物品区域内
-            boolean isOnItem = relativeX >= itemX && relativeX < itemX + itemWidth && 
-                              relativeY >= itemY && relativeY < itemY + itemHeight;
+            // 检查鼠标是否在备用物品区域内 - 支持多行制作任务和滚动
+            boolean isOnItem = false;
+            int rowHeight = itemHeight;
             
-            AE2CraftingLens.LOGGER.info("Checking crafting item area: GUI({}, {}), relative mouse: ({}, {}), item area: ({}, {}) size ({}, {}), result: {}",
-                    guiLeft, guiTop, relativeX, relativeY, itemX, itemY, itemWidth, itemHeight, isOnItem);
+            // 支持最多20行制作任务（考虑滚动和大量任务）
+            int maxRows = 20;
+            
+            // 计算相对于第一行的垂直偏移
+            float deltaY = (float)(relativeY - itemY);
+            
+            // 计算最接近的行索引（考虑滚动）
+            int closestRow = Math.round(deltaY / rowHeight);
+            
+            // 确保行索引在合理范围内
+            if (closestRow < 0) closestRow = 0;
+            if (closestRow >= maxRows) closestRow = maxRows - 1;
+            
+            // 检查最接近的行及其相邻行（容差±2行）
+            int startRow = Math.max(0, closestRow - 2);
+            int endRow = Math.min(maxRows - 1, closestRow + 2);
+            
+            AE2CraftingLens.LOGGER.debug("DeltaY: {}, closestRow: {}, checking rows {} to {}", deltaY, closestRow, startRow, endRow);
+            
+            for (int row = startRow; row <= endRow; row++) {
+                int currentItemY = itemY + row * rowHeight;
+                boolean isOnCurrentRow = relativeX >= itemX && relativeX < itemX + itemWidth && 
+                                        relativeY >= currentItemY && relativeY < currentItemY + rowHeight;
+                
+                if (isOnCurrentRow) {
+                    isOnItem = true;
+                    AE2CraftingLens.LOGGER.info("Click detected on crafting item row {} at y={} (deltaY={})", row, currentItemY, deltaY);
+                    break;
+                }
+            }
+            
+            // 如果没找到，记录详细信息用于调试
+            if (!isOnItem) {
+                AE2CraftingLens.LOGGER.debug("Click not detected on any crafting row. Details: relativeX={}, relativeY={}, itemX={}, itemY={}, rowHeight={}, deltaY={}, closestRow={}", 
+                        relativeX, relativeY, itemX, itemY, rowHeight, deltaY, closestRow);
+            }
+            
+            AE2CraftingLens.LOGGER.info("Checking crafting item area: GUI({}, {}), relative mouse: ({}, {}), item area: ({}, {}) size ({}, {}), rows checked: {}-{}, result: {}",
+                    guiLeft, guiTop, relativeX, relativeY, itemX, itemY, itemWidth, itemHeight, startRow, endRow, isOnItem);
             
             return isOnItem;
         } catch (Exception e) {
