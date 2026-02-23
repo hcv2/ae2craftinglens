@@ -138,38 +138,34 @@ public class CraftingScreenHandler {
     /**
      * 检查点击是否在当前合成物品上
      * 在 CraftingStatusScreen 中，当前合成物品显示在进度条上方
-     * 根据 AE2 的 GUI 布局，物品通常在屏幕中央偏上的位置
+     * 使用相对于 GUI 左上角的坐标，而不是屏幕坐标
      */
     private boolean isClickOnCraftingItem(Object screen, double mouseX, double mouseY) {
         try {
             // 获取屏幕的 GUI 位置和大小
             java.lang.reflect.Method getGuiLeftMethod = screen.getClass().getMethod("getGuiLeft");
             java.lang.reflect.Method getGuiTopMethod = screen.getClass().getMethod("getGuiTop");
-            java.lang.reflect.Method getXSizeMethod = screen.getClass().getMethod("getXSize");
             int guiLeft = (int) getGuiLeftMethod.invoke(screen);
             int guiTop = (int) getGuiTopMethod.invoke(screen);
-            int xSize = (int) getXSizeMethod.invoke(screen);
             
-            // 在 CraftingStatusScreen 中，当前合成物品通常在进度条上方
-            // 根据 AE2 的代码，进度条在 y = guiTop + 51 的位置
-            // 物品显示在进度条上方，大约在 y = guiTop + 30-35 的位置
-            // 物品在屏幕中央，x = guiLeft + xSize/2 - 8 (16x16 物品槽居中)
-            int itemCenterX = guiLeft + xSize / 2;
-            int itemCenterY = guiTop + 34; // 进度条上方
-            int itemSize = 16; // Minecraft 物品槽大小
+            // 将鼠标坐标转换为相对于 GUI 左上角的坐标
+            double relativeX = mouseX - guiLeft;
+            double relativeY = mouseY - guiTop;
             
-            // 物品区域：16x16 的正方形，居中
-            int itemX = itemCenterX - itemSize / 2;
-            int itemY = itemCenterY - itemSize / 2;
-            int itemWidth = itemSize;
-            int itemHeight = itemSize;
+            // 在 CraftingStatusScreen 中，当前合成物品显示在特定位置
+            // 根据 AE2 的代码分析，物品显示在 x=80, y=34 的位置（相对于 GUI 左上角）
+            // 这是 16x16 的物品槽
+            int itemX = 80;  // 相对于 GUI 左侧偏移 80 像素
+            int itemY = 34;  // 相对于 GUI 顶部偏移 34 像素
+            int itemWidth = 16;
+            int itemHeight = 16;
             
             // 检查鼠标是否在物品区域内
-            boolean isOnItem = mouseX >= itemX && mouseX < itemX + itemWidth && 
-                              mouseY >= itemY && mouseY < itemY + itemHeight;
+            boolean isOnItem = relativeX >= itemX && relativeX < itemX + itemWidth && 
+                              relativeY >= itemY && relativeY < itemY + itemHeight;
             
-            AE2CraftingLens.LOGGER.info("Checking crafting item area: ({}, {}) size ({}, {}), center: ({}, {}), mouse: ({}, {}), result: {}",
-                    itemX, itemY, itemWidth, itemHeight, itemCenterX, itemCenterY, mouseX, mouseY, isOnItem);
+            AE2CraftingLens.LOGGER.info("Checking crafting item area: GUI({}, {}), relative mouse: ({}, {}), item area: ({}, {}) size ({}, {}), result: {}",
+                    guiLeft, guiTop, relativeX, relativeY, itemX, itemY, itemWidth, itemHeight, isOnItem);
             
             return isOnItem;
         } catch (Exception e) {
