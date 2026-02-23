@@ -27,11 +27,18 @@ public class CraftingScreenHandler {
         String screenClassName = screen.getClass().getName();
         AE2CraftingLens.LOGGER.info("Screen class: {}", screenClassName);
         
-        // 只在 CraftingStatusScreen 中处理点击
-        if (!screenClassName.contains("CraftingStatusScreen")) {
-            AE2CraftingLens.LOGGER.info("Not a CraftingStatusScreen, skipping");
+        // 在 CraftingStatusScreen 或无线通用终端(WCTScreen)中处理点击
+        boolean isCraftingStatusScreen = screenClassName.contains("CraftingStatusScreen");
+        boolean isWCTScreen = screenClassName.contains("WCTScreen") && screenClassName.contains("ae2wtlib");
+        
+        if (!isCraftingStatusScreen && !isWCTScreen) {
+            AE2CraftingLens.LOGGER.info("Not a CraftingStatusScreen or WCTScreen, skipping");
             return;
         }
+        
+        AE2CraftingLens.LOGGER.info("Screen type: {} (CraftingStatusScreen: {}, WCTScreen: {})", 
+                isCraftingStatusScreen ? "CraftingStatusScreen" : "WCTScreen", 
+                isCraftingStatusScreen, isWCTScreen);
         
         // 检查是否是左键点击
         if (event.getButton() != 0) {
@@ -186,13 +193,37 @@ public class CraftingScreenHandler {
                 AE2CraftingLens.LOGGER.debug("Error inspecting renderables: {}", e.getMessage());
             }
             
-            // 在 CraftingStatusScreen 中，当前合成物品显示在特定位置
-            // 根据调试日志调整位置，覆盖用户点击区域
-            // 用户点击的 relativeX 范围: 70-200, relativeY 范围: 29-51
-            int itemX = 70;  // 扩大检测区域起始X
-            int itemY = 29;  // 扩大检测区域起始Y
-            int itemWidth = 130;  // 宽度覆盖 70-200 范围
-            int itemHeight = 22;  // 高度覆盖 29-51 范围
+            // 根据屏幕类型确定检测区域
+            String screenClassName = screen.getClass().getName();
+            boolean isCraftingStatusScreen = screenClassName.contains("CraftingStatusScreen");
+            boolean isWCTScreen = screenClassName.contains("WCTScreen") && screenClassName.contains("ae2wtlib");
+            
+            int itemX, itemY, itemWidth, itemHeight;
+            
+            if (isCraftingStatusScreen) {
+                // 对于 CraftingStatusScreen，使用原始检测区域
+                // 用户点击的 relativeX 范围: 70-200, relativeY 范围: 29-51
+                itemX = 70;  // 扩大检测区域起始X
+                itemY = 29;  // 扩大检测区域起始Y
+                itemWidth = 130;  // 宽度覆盖 70-200 范围
+                itemHeight = 22;  // 高度覆盖 29-51 范围
+                AE2CraftingLens.LOGGER.info("Using CraftingStatusScreen detection area");
+            } else if (isWCTScreen) {
+                // 对于 WCTScreen（无线通用终端），使用相同的检测区域
+                // 从日志看，用户点击位置相似，但可能需要调整
+                itemX = 70;  // 扩大检测区域起始X
+                itemY = 29;  // 扩大检测区域起始Y
+                itemWidth = 130;  // 宽度覆盖 70-200 范围
+                itemHeight = 22;  // 高度覆盖 29-51 范围
+                AE2CraftingLens.LOGGER.info("Using WCTScreen detection area");
+            } else {
+                // 未知屏幕类型，使用默认区域
+                itemX = 70;
+                itemY = 29;
+                itemWidth = 130;
+                itemHeight = 22;
+                AE2CraftingLens.LOGGER.info("Using default detection area for unknown screen type");
+            }
             
             // 检查鼠标是否在物品区域内
             boolean isOnItem = relativeX >= itemX && relativeX < itemX + itemWidth && 
