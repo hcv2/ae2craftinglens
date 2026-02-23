@@ -1,7 +1,11 @@
 package com.ae2craftinglens.mod;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
@@ -9,7 +13,7 @@ import net.minecraft.world.level.Level;
 public class PatternProviderHighlightManager {
     private static final PatternProviderHighlightManager INSTANCE = new PatternProviderHighlightManager();
     
-    private final List<HighlightedProvider> highlightedProviders = new ArrayList<>();
+    private final Map<UUID, List<HighlightedProvider>> playerHighlights = new HashMap<>();
     private static final long HIGHLIGHT_DURATION_MS = 12000;
     
     private PatternProviderHighlightManager() {}
@@ -18,44 +22,97 @@ public class PatternProviderHighlightManager {
         return INSTANCE;
     }
     
-    public void addHighlightedProvider(Level level, BlockPos pos) {
-        if (level == null || pos == null) return;
+    public void addHighlightedProvider(UUID playerId, Level level, BlockPos pos) {
+        if (playerId == null || level == null || pos == null) return;
         
-        highlightedProviders.removeIf(hp -> hp.matches(level, pos));
-        highlightedProviders.add(new HighlightedProvider(level, pos, System.currentTimeMillis() + HIGHLIGHT_DURATION_MS));
+        List<HighlightedProvider> playerList = playerHighlights.computeIfAbsent(playerId, k -> new ArrayList<>());
+        playerList.removeIf(hp -> hp.matches(level, pos));
+        playerList.add(new HighlightedProvider(playerId, level, pos, System.currentTimeMillis() + HIGHLIGHT_DURATION_MS));
     }
     
-    public void addHighlightedProviders(Level level, List<BlockPos> positions) {
+    public void addHighlightedProviders(UUID playerId, Level level, List<BlockPos> positions) {
         for (BlockPos pos : positions) {
-            addHighlightedProvider(level, pos);
+            addHighlightedProvider(playerId, level, pos);
         }
     }
     
-    public List<HighlightedProvider> getActiveHighlights() {
+    public List<HighlightedProvider> getActiveHighlights(UUID playerId) {
+        if (playerId == null) return Collections.emptyList();
+        
+        List<HighlightedProvider> playerList = playerHighlights.get(playerId);
+        if (playerList == null || playerList.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
         long currentTime = System.currentTimeMillis();
-        highlightedProviders.removeIf(hp -> hp.isExpired(currentTime));
-        return new ArrayList<>(highlightedProviders);
+        playerList.removeIf(hp -> hp.isExpired(currentTime));
+        return new ArrayList<>(playerList);
     }
     
-    public void clearHighlights() {
-        highlightedProviders.clear();
+    public List<HighlightedProvider> getAllActiveHighlights() {
+        List<HighlightedProvider> allHighlights = new ArrayList<>();
+        long currentTime = System.currentTimeMillis();
+        
+        for (List<HighlightedProvider> playerList : playerHighlights.values()) {
+            playerList.removeIf(hp -> hp.isExpired(currentTime));
+            allHighlights.addAll(playerList);
+        }
+        
+        return allHighlights;
     }
     
-    public boolean hasActiveHighlights() {
+    public void clearHighlights(UUID playerId) {
+        if (playerId != null) {
+            playerHighlights.remove(playerId);
+        }
+    }
+    
+    public void clearAllHighlights() {
+        playerHighlights.clear();
+    }
+    
+    public boolean hasActiveHighlights(UUID playerId) {
+        if (playerId == null) return false;
+        
+        List<HighlightedProvider> playerList = playerHighlights.get(playerId);
+        if (playerList == null || playerList.isEmpty()) {
+            return false;
+        }
+        
         long currentTime = System.currentTimeMillis();
-        highlightedProviders.removeIf(hp -> hp.isExpired(currentTime));
-        return !highlightedProviders.isEmpty();
+        playerList.removeIf(hp -> hp.isExpired(currentTime));
+        return !playerList.isEmpty();
+    }
+    
+    public boolean hasAnyActiveHighlights() {
+        boolean hasAny = false;
+        long currentTime = System.currentTimeMillis();
+        
+        for (List<HighlightedProvider> playerList : playerHighlights.values()) {
+            playerList.removeIf(hp -> hp.isExpired(currentTime));
+            if (!playerList.isEmpty()) {
+                hasAny = true;
+            }
+        }
+        
+        return hasAny;
     }
     
     public static class HighlightedProvider {
+        private final UUID playerId;
         private final Level level;
         private final BlockPos pos;
         private final long expireTime;
         
-        public HighlightedProvider(Level level, BlockPos pos, long expireTime) {
+        public HighlightedProvider(UUID playerId, Level level, BlockPos pos, long expireTime) {
+            this.playerId = playerId;
             this.level = level;
             this.pos = pos;
             this.expireTime = expireTime;
+        }
+        
+        public UUID getPlayerId() {
+            return playerId;
         }
         
         public Level getLevel() {

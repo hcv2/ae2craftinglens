@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
@@ -25,12 +26,17 @@ public class PatternProviderHighlightRenderer {
             return;
         }
         
-        PatternProviderHighlightManager manager = PatternProviderHighlightManager.getInstance();
-        if (!manager.hasActiveHighlights()) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null) {
             return;
         }
         
-        Minecraft mc = Minecraft.getInstance();
+        PatternProviderHighlightManager manager = PatternProviderHighlightManager.getInstance();
+        if (!manager.hasActiveHighlights(player.getUUID())) {
+            return;
+        }
+        
         Level level = mc.level;
         if (level == null) {
             return;
@@ -45,7 +51,7 @@ public class PatternProviderHighlightRenderer {
         // 使用缓冲区源
         MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
         
-        for (PatternProviderHighlightManager.HighlightedProvider hp : manager.getActiveHighlights()) {
+        for (PatternProviderHighlightManager.HighlightedProvider hp : manager.getActiveHighlights(player.getUUID())) {
             if (hp.getLevel() == level) {
                 renderHighlight(poseStack, bufferSource, hp.getPos(), hp.getRemainingSeconds());
             }
@@ -69,13 +75,26 @@ public class PatternProviderHighlightRenderer {
         
         // 使用可以穿透方块的渲染类型
         // RenderType.lines() 使用 NO_DEPTH_TEST 可以穿透方块
+        @SuppressWarnings("null")
         VertexConsumer vertexConsumer = bufferSource.getBuffer(RenderType.lines());
         
+        // 绘制主框线
         renderBox(poseStack, vertexConsumer, box, r, g, b, alpha);
         
+        // 绘制加粗的框线以增加可见性（通过绘制多个偏移的线条）
+        // 轻微偏移以模拟线宽
+        float offset = 0.0005f;
+        AABB boxOffset1 = box.inflate(offset);
+        renderBox(poseStack, vertexConsumer, boxOffset1, r, g, b, alpha * 0.8f);
+        AABB boxOffset2 = box.inflate(-offset);
+        renderBox(poseStack, vertexConsumer, boxOffset2, r, g, b, alpha * 0.8f);
+        
         // 添加一个填充的半透明框，使其更明显
+        // 使用 RenderType.translucent() 并期望它能穿透方块
+        // 注意：translucent() 可能进行深度测试，但 alpha 混合可能使其可见
+        @SuppressWarnings("null")
         VertexConsumer translucentConsumer = bufferSource.getBuffer(RenderType.translucent());
-        renderFilledBox(poseStack, translucentConsumer, box.inflate(-0.001), r, g, b, alpha * 0.2f);
+        renderFilledBox(poseStack, translucentConsumer, box.inflate(-0.001), r, g, b, alpha * 0.1f);
     }
     
     @SuppressWarnings("null")

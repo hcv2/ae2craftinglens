@@ -115,9 +115,21 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                 
                 // 添加高亮显示
                 AE2CraftingLens.LOGGER.info("Adding highlighted providers");
+                
+                // 获取玩家UUID
+                java.util.UUID playerId = null;
+                try {
+                    Method getUUIDMethod = player.getClass().getMethod("getUUID");
+                    playerId = (java.util.UUID) getUUIDMethod.invoke(player);
+                    AE2CraftingLens.LOGGER.info("Found player UUID: {}", playerId);
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.error("Error getting player UUID", e);
+                    return;
+                }
+                
                 for (BlockPos pos : packet.positions()) {
                     AE2CraftingLens.LOGGER.info("Adding highlight for provider at: {}", pos);
-                    manager.addHighlightedProvider((net.minecraft.world.level.Level) level, pos);
+                    manager.addHighlightedProvider(playerId, (net.minecraft.world.level.Level) level, pos);
                 }
                 
                 // 显示详细信息
@@ -160,11 +172,10 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             // 添加维度信息
                             Object dimComponent = literalMethod.invoke(null, dimensionStr);
                             
-                            // 创建样式 - 使用 Style.EMPTY.copy()
-                            Class<?> styleClass = Class.forName("net.minecraft.network.chat.Style");
-                            Object emptyStyle = styleClass.getField("EMPTY").get(null);
-                            Method copyMethod = styleClass.getMethod("copy");
-                            Object style = copyMethod.invoke(emptyStyle);
+                            // 创建样式 - 使用 Style.EMPTY
+                    Class<?> styleClass = Class.forName("net.minecraft.network.chat.Style");
+                    Object emptyStyle = styleClass.getField("EMPTY").get(null);
+                    Object style = emptyStyle;
                             
                             // 设置颜色 - 使用 TextColor.fromRgb()
                             Class<?> textColorClass = Class.forName("net.minecraft.network.chat.TextColor");
@@ -217,7 +228,7 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             Object posComponent = literalMethod.invoke(null, pos.getX() + ", " + pos.getY() + ", " + pos.getZ());
                             
                             // 创建坐标样式
-                            style = copyMethod.invoke(emptyStyle);
+                            style = emptyStyle;
                             style = withColorMethod.invoke(style, fromRgbMethod.invoke(null, 0x00FF00));
                             style = withUnderlinedMethod.invoke(style, true);
                             
@@ -243,7 +254,7 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                             
                             // 添加距离信息
                             Object distanceComponent = literalMethod.invoke(null, String.format("%.1f blocks", distance));
-                            style = copyMethod.invoke(emptyStyle);
+                            style = emptyStyle;
                             style = withColorMethod.invoke(style, fromRgbMethod.invoke(null, 0xFFFF00));
                             distanceComponent = withStyleMethod.invoke(distanceComponent, style);
                             baseMessage = appendMethod.invoke(baseMessage, distanceComponent);
