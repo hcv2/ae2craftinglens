@@ -137,36 +137,45 @@ public class CraftingScreenHandler {
     
     /**
      * 检查点击是否在当前合成物品上
-     * 在 CraftingStatusScreen 中，当前合成物品通常在特定位置显示
+     * 在 CraftingStatusScreen 中，当前合成物品显示在进度条上方
+     * 根据 AE2 的 GUI 布局，物品通常在屏幕中央偏上的位置
      */
     private boolean isClickOnCraftingItem(Object screen, double mouseX, double mouseY) {
         try {
-            // 获取屏幕的宽度和高度
-            java.lang.reflect.Method getWidthMethod = screen.getClass().getMethod("getGuiLeft");
-            java.lang.reflect.Method getHeightMethod = screen.getClass().getMethod("getGuiTop");
-            int guiLeft = (int) getWidthMethod.invoke(screen);
-            int guiTop = (int) getHeightMethod.invoke(screen);
+            // 获取屏幕的 GUI 位置和大小
+            java.lang.reflect.Method getGuiLeftMethod = screen.getClass().getMethod("getGuiLeft");
+            java.lang.reflect.Method getGuiTopMethod = screen.getClass().getMethod("getGuiTop");
+            java.lang.reflect.Method getXSizeMethod = screen.getClass().getMethod("getXSize");
+            int guiLeft = (int) getGuiLeftMethod.invoke(screen);
+            int guiTop = (int) getGuiTopMethod.invoke(screen);
+            int xSize = (int) getXSizeMethod.invoke(screen);
             
-            // 在 CraftingStatusScreen 中，当前合成物品通常在屏幕顶部中央位置
-            // 这是一个大致的区域，可能需要根据实际情况调整
-            // 通常合成物品显示在标题下方，大约在 y = guiTop + 30 的位置
-            int itemX = guiLeft + 80; // 假设在 GUI 左侧偏移 80 像素
-            int itemY = guiTop + 30;  // 假设在 GUI 顶部偏移 30 像素
-            int itemWidth = 100;      // 假设物品显示区域宽度为 100 像素
-            int itemHeight = 20;      // 假设物品显示区域高度为 20 像素
+            // 在 CraftingStatusScreen 中，当前合成物品通常在进度条上方
+            // 根据 AE2 的代码，进度条在 y = guiTop + 51 的位置
+            // 物品显示在进度条上方，大约在 y = guiTop + 30-35 的位置
+            // 物品在屏幕中央，x = guiLeft + xSize/2 - 8 (16x16 物品槽居中)
+            int itemCenterX = guiLeft + xSize / 2;
+            int itemCenterY = guiTop + 34; // 进度条上方
+            int itemSize = 16; // Minecraft 物品槽大小
+            
+            // 物品区域：16x16 的正方形，居中
+            int itemX = itemCenterX - itemSize / 2;
+            int itemY = itemCenterY - itemSize / 2;
+            int itemWidth = itemSize;
+            int itemHeight = itemSize;
             
             // 检查鼠标是否在物品区域内
             boolean isOnItem = mouseX >= itemX && mouseX < itemX + itemWidth && 
                               mouseY >= itemY && mouseY < itemY + itemHeight;
             
-            AE2CraftingLens.LOGGER.info("Checking crafting item area: ({}, {}) size ({}, {}), mouse: ({}, {}), result: {}",
-                    itemX, itemY, itemWidth, itemHeight, mouseX, mouseY, isOnItem);
+            AE2CraftingLens.LOGGER.info("Checking crafting item area: ({}, {}) size ({}, {}), center: ({}, {}), mouse: ({}, {}), result: {}",
+                    itemX, itemY, itemWidth, itemHeight, itemCenterX, itemCenterY, mouseX, mouseY, isOnItem);
             
             return isOnItem;
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.debug("Error checking crafting item click: {}", e.getMessage());
-            // 如果无法确定，默认返回 true，让请求发送
-            return true;
+            // 如果无法确定，默认返回 false，不触发
+            return false;
         }
     }
 }
