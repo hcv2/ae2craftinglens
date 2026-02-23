@@ -306,6 +306,7 @@ public class PatternProviderRequestHandler {
                                     }
                                     
                                     if (aeKey != null) {
+                                        AE2CraftingLens.LOGGER.info("Using AEKey to find patterns: {}", aeKey);
                                         // 使用 AEKey 查找对应的样板
                                         Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
                                         Class<?> patternDetailsClass = Class.forName("appeng.api.crafting.IPatternDetails");
@@ -314,25 +315,41 @@ public class PatternProviderRequestHandler {
                                         Iterable<?> patterns = (Iterable<?>) getCraftingForMethod.invoke(craftingService, aeKey);
                                         
                                         if (patterns != null) {
+                                            int patternCount = 0;
                                             for (Object pattern : patterns) {
+                                                patternCount++;
+                                                AE2CraftingLens.LOGGER.info("Found pattern {}: {}", patternCount, pattern);
                                                 try {
                                                     Method getProvidersMethod = craftingService.getClass().getMethod("getProviders", patternDetailsClass);
                                                     Iterable<?> providers = (Iterable<?>) getProvidersMethod.invoke(craftingService, pattern);
                                                     
                                                     if (providers != null) {
+                                                        int providerCount = 0;
                                                         for (Object provider : providers) {
+                                                            providerCount++;
+                                                            AE2CraftingLens.LOGGER.info("Found provider {}: {}", providerCount, provider);
                                                             BlockPos pos = getProviderPosition(provider);
                                                             if (pos != null) {
                                                                 positions.add(pos);
                                                                 AE2CraftingLens.LOGGER.info("Found provider at {} for active job", pos);
+                                                            } else {
+                                                                AE2CraftingLens.LOGGER.warn("Could not get position for provider: {}", provider);
                                                             }
                                                         }
+                                                        AE2CraftingLens.LOGGER.info("Total providers found for pattern: {}", providerCount);
+                                                    } else {
+                                                        AE2CraftingLens.LOGGER.info("No providers found for pattern");
                                                     }
                                                 } catch (Exception e) {
-                                                    AE2CraftingLens.LOGGER.debug("Error getting providers for pattern: {}", e.getMessage());
+                                                    AE2CraftingLens.LOGGER.error("Error getting providers for pattern: {}", e.getMessage(), e);
                                                 }
                                             }
+                                            AE2CraftingLens.LOGGER.info("Total patterns found: {}", patternCount);
+                                        } else {
+                                            AE2CraftingLens.LOGGER.info("No patterns found for AEKey: {}", aeKey);
                                         }
+                                    } else {
+                                        AE2CraftingLens.LOGGER.warn("AEKey is null, cannot find patterns");
                                     }
                                 }
                             }
