@@ -110,6 +110,73 @@ public class CraftingScreenHandler {
                     }
                 } catch (Exception e) {
                     AE2CraftingLens.LOGGER.error("Error calling getSlotAt: {}", e.getMessage());
+                    
+                    // 尝试处理CraftingStatusScreen
+                    if (screenClassName.contains("CraftingStatusScreen")) {
+                        AE2CraftingLens.LOGGER.info("Attempting special handling for CraftingStatusScreen");
+                        try {
+                            // 尝试获取CraftingStatusScreen中的物品列表
+                            // 首先尝试获取所有字段，查看有哪些可能包含物品的字段
+                            AE2CraftingLens.LOGGER.info("Listing all fields in CraftingStatusScreen:");
+                            for (java.lang.reflect.Field field : screen.getClass().getDeclaredFields()) {
+                                field.setAccessible(true);
+                                try {
+                                    Object value = field.get(screen);
+                                    if (value != null) {
+                                        AE2CraftingLens.LOGGER.info("Field: {} = {} (Type: {})", field.getName(), value, value.getClass().getName());
+                                    }
+                                } catch (Exception ex) {
+                                    // 忽略
+                                }
+                            }
+                            
+                            // 尝试获取CraftingStatusScreen的父类字段
+                            Class<?> superClass = screen.getClass().getSuperclass();
+                            while (superClass != null) {
+                                AE2CraftingLens.LOGGER.info("Listing fields in superclass: {}", superClass.getName());
+                                for (java.lang.reflect.Field field : superClass.getDeclaredFields()) {
+                                    field.setAccessible(true);
+                                    try {
+                                        Object value = field.get(screen);
+                                        if (value != null) {
+                                            AE2CraftingLens.LOGGER.info("Field: {} = {} (Type: {})", field.getName(), value, value.getClass().getName());
+                                        }
+                                    } catch (Exception ex) {
+                                        // 忽略
+                                    }
+                                }
+                                superClass = superClass.getSuperclass();
+                            }
+                            
+                            // 尝试常见的字段名
+                            String[] possibleFieldNames = {
+                                "jobs", "craftingJobs", "jobList", "tasks", "craftingTasks",
+                                "list", "itemList", "craftingList", "recipeList", "grid",
+                                "menu", "container", "inventory", "slots", "slotList"
+                            };
+                            
+                            for (String fieldName : possibleFieldNames) {
+                                try {
+                                    java.lang.reflect.Field field = screen.getClass().getDeclaredField(fieldName);
+                                    field.setAccessible(true);
+                                    Object value = field.get(screen);
+                                    if (value != null) {
+                                        AE2CraftingLens.LOGGER.info("Found potential field: {} = {} (Type: {})", fieldName, value, value.getClass().getName());
+                                        
+                                        // 尝试检查是否是可迭代的列表
+                                        if (value instanceof Iterable) {
+                                            AE2CraftingLens.LOGGER.info("Field {} is Iterable", fieldName);
+                                            // 这里可以进一步处理迭代器，找到鼠标位置对应的物品
+                                        }
+                                    }
+                                } catch (Exception ex) {
+                                    // 忽略，尝试下一个字段名
+                                }
+                            }
+                        } catch (Exception ex) {
+                            AE2CraftingLens.LOGGER.error("Error handling CraftingStatusScreen: {}", ex.getMessage());
+                        }
+                    }
                 }
             }
             
