@@ -302,12 +302,19 @@ public class PatternProviderRequestHandler {
                             AE2CraftingLens.LOGGER.info("Found active job on CPU {}: {}", cpuCount, currentJob);
                             
                             // 获取 grid
-                            Field gridField = menu.getClass().getDeclaredField("grid");
-                            gridField.setAccessible(true);
-                            Object grid = gridField.get(menu);
+                            Object grid = null;
+                            try {
+                                Field gridField = menu.getClass().getDeclaredField("grid");
+                                gridField.setAccessible(true);
+                                grid = gridField.get(menu);
+                                AE2CraftingLens.LOGGER.info("Got grid for CPU {}: {}", cpuCount, grid);
+                            } catch (Exception e) {
+                                AE2CraftingLens.LOGGER.error("Error getting grid for CPU {}: {}", cpuCount, e.getMessage());
+                            }
                             
                             if (grid != null) {
                                 Object craftingService = invokeMethod(grid, "getCraftingService", Object.class);
+                                AE2CraftingLens.LOGGER.info("Got craftingService for CPU {}: {}", cpuCount, craftingService);
                                 if (craftingService != null) {
                                     // currentJob 可能是 GenericStack 类型，需要获取 what 字段
                                     Object aeKey = null;
