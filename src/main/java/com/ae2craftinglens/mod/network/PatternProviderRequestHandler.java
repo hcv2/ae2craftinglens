@@ -164,19 +164,19 @@ public class PatternProviderRequestHandler {
         Set<BlockPos> positions = new HashSet<>();
         
         try {
-            // 方法1: 尝试从 CraftingStatusMenu 的 cpuList 获取活跃的合成作业
-            if (menu != null && menu.getClass().getName().contains("CraftingStatusMenu")) {
-                AE2CraftingLens.LOGGER.info("Attempting to get active providers from CraftingStatusMenu cpuList");
-                positions.addAll(findProvidersFromCraftingStatusMenu(menu));
-                if (!positions.isEmpty()) {
-                    return positions;
-                }
-            }
-            
             Object craftingService = invokeMethod(grid, "getCraftingService", Object.class);
             if (craftingService == null) {
                 AE2CraftingLens.LOGGER.warn("Could not get crafting service");
                 return positions;
+            }
+            
+            // 方法1: 尝试从 CraftingStatusMenu 的 cpuList 获取活跃的合成作业
+            if (menu != null && menu.getClass().getName().contains("CraftingStatusMenu")) {
+                AE2CraftingLens.LOGGER.info("Attempting to get active providers from CraftingStatusMenu cpuList");
+                positions.addAll(findProvidersFromCraftingStatusMenu(menu, grid, craftingService));
+                if (!positions.isEmpty()) {
+                    return positions;
+                }
             }
             
             // 方法2: 尝试获取所有活跃的合成作业
@@ -248,7 +248,7 @@ public class PatternProviderRequestHandler {
         return positions;
     }
     
-    private static Set<BlockPos> findProvidersFromCraftingStatusMenu(Object menu) {
+    private static Set<BlockPos> findProvidersFromCraftingStatusMenu(Object menu, Object grid, Object craftingService) {
         Set<BlockPos> positions = new HashSet<>();
         
         try {
@@ -275,27 +275,8 @@ public class PatternProviderRequestHandler {
                     return positions;
                 }
                 
-                // 在循环外部获取 grid 和 craftingService，因为它们对所有 CPU 都是一样的
-                Object grid = null;
-                Object craftingService = null;
-                try {
-                    Field gridField = menu.getClass().getDeclaredField("grid");
-                    gridField.setAccessible(true);
-                    grid = gridField.get(menu);
-                    AE2CraftingLens.LOGGER.info("Got grid from menu: {}", grid);
-                    
-                    if (grid != null) {
-                        craftingService = invokeMethod(grid, "getCraftingService", Object.class);
-                        AE2CraftingLens.LOGGER.info("Got craftingService from grid: {}", craftingService);
-                    }
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.error("Error getting grid or craftingService: {}", e.getMessage(), e);
-                }
-                
-                if (grid == null || craftingService == null) {
-                    AE2CraftingLens.LOGGER.warn("Cannot proceed without grid or craftingService");
-                    return positions;
-                }
+                // 使用传入的 grid 和 craftingService
+                AE2CraftingLens.LOGGER.info("Using provided grid: {} and craftingService: {}", grid, craftingService);
                 
                 int cpuCount = 0;
                 for (Object cpu : cpus) {
