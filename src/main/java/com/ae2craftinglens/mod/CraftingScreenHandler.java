@@ -177,12 +177,11 @@ public class CraftingScreenHandler {
                     }
                 } else {
                     AE2CraftingLens.LOGGER.debug("No AEKey found for hoveredStack: {}", hoveredStack);
+                    // 找到了 hoveredStack 但没有找到 AEKey，取消事件，防止尝试打开被指向的方块
+                    event.setCanceled(true);
+                    AE2CraftingLens.LOGGER.debug("Event canceled to prevent opening targeted blocks");
                 }
             }
-            
-            // 即使没有找到 AEKey，也取消事件，防止尝试打开被指向的方块
-            event.setCanceled(true);
-            AE2CraftingLens.LOGGER.debug("Event canceled to prevent opening targeted blocks");
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error handling mouse click", e);
         }
