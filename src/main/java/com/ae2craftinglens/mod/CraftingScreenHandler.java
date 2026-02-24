@@ -66,9 +66,9 @@ public class CraftingScreenHandler {
         
         // 检查是否按住Shift
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) {
+        if (mc == null || mc.player == null) {
             if (AE2CraftingLens.isDebugLoggingEnabled()) {
-                AE2CraftingLens.LOGGER.info("Player is null, skipping");
+                AE2CraftingLens.LOGGER.info("Minecraft instance or player is null, skipping");
             }
             return;
         }
@@ -380,7 +380,9 @@ public class CraftingScreenHandler {
                 return null;
             }
             
-            Object menu = mc.player.containerMenu;
+            // 获取玩家引用，避免潜在的空指针访问警告
+            net.minecraft.client.player.LocalPlayer player = mc.player;
+            Object menu = player.containerMenu;
             if (menu == null) {
                 AE2CraftingLens.LOGGER.debug("Player has no open menu");
                 return null;
