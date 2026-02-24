@@ -429,53 +429,6 @@ public class PatternProviderRequestHandler {
         return false;
     }
     
-    private static boolean isPatternRelevantToTarget(Object pattern, Object targetKey, Object craftingService) {
-        try {
-            Method getPrimaryOutputMethod = pattern.getClass().getMethod("getPrimaryOutput");
-            Object primaryOutput = getPrimaryOutputMethod.invoke(pattern);
-            
-            if (primaryOutput != null) {
-                Class<?> genericStackClass = Class.forName("appeng.api.stacks.GenericStack");
-                if (genericStackClass.isInstance(primaryOutput)) {
-                    Method whatMethod = genericStackClass.getMethod("what");
-                    Object outputKey = whatMethod.invoke(primaryOutput);
-                    
-                    if (outputKey != null && outputKey.equals(targetKey)) {
-                        AE2CraftingLens.LOGGER.debug("Pattern primary output matches target: {}", outputKey);
-                        return true;
-                    }
-                }
-            }
-            
-            try {
-                Method getOutputsMethod = pattern.getClass().getMethod("getOutputs");
-                Object outputs = getOutputsMethod.invoke(pattern);
-                
-                if (outputs != null && outputs instanceof Object[]) {
-                    for (Object output : (Object[]) outputs) {
-                        Class<?> genericStackClass = Class.forName("appeng.api.stacks.GenericStack");
-                        if (genericStackClass.isInstance(output)) {
-                            Method whatMethod = genericStackClass.getMethod("what");
-                            Object outputKey = whatMethod.invoke(output);
-                            
-                            if (outputKey != null && outputKey.equals(targetKey)) {
-                                AE2CraftingLens.LOGGER.debug("Pattern output matches target: {}", outputKey);
-                                return true;
-                            }
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error checking outputs: {}", e.getMessage());
-            }
-            
-        } catch (Exception e) {
-            AE2CraftingLens.LOGGER.debug("Error checking pattern relevance: {}", e.getMessage());
-        }
-        
-        return false;
-    }
-    
     private static Set<BlockPos> findPatternProvidersForKey(Object grid, Object targetKey) {
         Set<BlockPos> positions = new HashSet<>();
         
