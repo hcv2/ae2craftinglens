@@ -519,10 +519,37 @@ public class PatternProviderRequestHandler {
             
             AE2CraftingLens.LOGGER.debug("Is ExtendedAE provider: {}", isExtendedAEProvider);
             
-            // 方法1: 尝试找到 PatternProviderLogicHost 或 PatternProviderBlockEntity
-            Object host = findFieldByTypeName(provider, "PatternProviderLogicHost");
+            // 方法0: 检查 provider 本身是否实现了 PatternProviderLogicHost 接口
+            Object host = null;
+            boolean isPatternProviderLogicHost = false;
+            try {
+                // 尝试查找 PatternProviderLogicHost 接口
+                Class<?> patternProviderLogicHostClass = null;
+                try {
+                    patternProviderLogicHostClass = Class.forName("appeng.helpers.patternprovider.PatternProviderLogicHost");
+                } catch (ClassNotFoundException e) {
+                    try {
+                        patternProviderLogicHostClass = Class.forName("appeng.api.helpers.IPatternProviderLogicHost");
+                    } catch (ClassNotFoundException e2) {
+                        // 接口未找到，继续其他方法
+                    }
+                }
+                
+                if (patternProviderLogicHostClass != null && patternProviderLogicHostClass.isInstance(provider)) {
+                    AE2CraftingLens.LOGGER.debug("Provider implements PatternProviderLogicHost interface");
+                    isPatternProviderLogicHost = true;
+                    host = provider; // provider 本身就是 host
+                }
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Error checking PatternProviderLogicHost interface: {}", e.getMessage());
+            }
+            
+            // 方法1: 如果 provider 本身不是 PatternProviderLogicHost，尝试找到 PatternProviderLogicHost 或 PatternProviderBlockEntity 字段
             if (host == null) {
-                host = findFieldByTypeName(provider, "PatternProviderBlockEntity");
+                host = findFieldByTypeName(provider, "PatternProviderLogicHost");
+                if (host == null) {
+                    host = findFieldByTypeName(provider, "PatternProviderBlockEntity");
+                }
             }
             
             // 如果是 ExtendedAE 提供器，尝试查找 ExtendedAE 特定的字段
