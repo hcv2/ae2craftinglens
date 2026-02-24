@@ -49,6 +49,7 @@ public class PatternProviderHighlightRenderer {
         poseStack.translate(-camera.x, -camera.y, -camera.z);
         
         RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
         
         MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
         
@@ -60,6 +61,7 @@ public class PatternProviderHighlightRenderer {
         
         bufferSource.endBatch();
         
+        RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
         
         poseStack.popPose();
