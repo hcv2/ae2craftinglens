@@ -1,17 +1,24 @@
 package com.ae2craftinglens.mod.network;
 
-import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Set;
 
 import com.ae2craftinglens.mod.AE2CraftingLens;
 import com.ae2craftinglens.mod.PatternProviderHighlightManager;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public record PatternProviderResponsePacket(Set<BlockPos> positions) implements CustomPacketPayload {
@@ -64,21 +71,14 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
             try {
                 AE2CraftingLens.LOGGER.info("Processing response packet with {} positions", packet.positions().size());
                 
-                Class<?> minecraftClass = Class.forName("net.minecraft.client.Minecraft");
-                Method getInstanceMethod = minecraftClass.getMethod("getInstance");
-                Object minecraft = getInstanceMethod.invoke(null);
-                
-                var playerField = minecraftClass.getDeclaredField("player");
-                playerField.setAccessible(true);
-                Object player = playerField.get(minecraft);
+                Minecraft mc = Minecraft.getInstance();
+                var player = mc.player;
                 if (player == null) {
                     AE2CraftingLens.LOGGER.warn("Player is null, skipping");
                     return;
                 }
                 
-                var levelField = minecraftClass.getDeclaredField("level");
-                levelField.setAccessible(true);
-                Object level = levelField.get(minecraft);
+                Level level = mc.level;
                 if (level == null) {
                     AE2CraftingLens.LOGGER.warn("Level is null, skipping");
                     return;
@@ -87,14 +87,12 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                 PatternProviderHighlightManager manager = PatternProviderHighlightManager.getInstance();
                 
                 if (packet.positions().isEmpty()) {
-                    displayMessage(player, "message.ae2craftinglens.no_providers_found", false);
+                    displayMessage(player, "message.ae2craftinglens.no_providers_found", null, false);
                     return;
                 }
                 
-                java.util.UUID playerId = (java.util.UUID) player.getClass().getMethod("getUUID").invoke(player);
-                
                 for (BlockPos pos : packet.positions()) {
-                    manager.addHighlightedProvider(playerId, (net.minecraft.world.level.Level) level, pos);
+                    manager.addHighlightedProvider(player.getUUID(), level, pos);
                 }
                 
                 displayMessage(player, "message.ae2craftinglens.highlighted_providers", packet.positions().size(), true);
@@ -111,116 +109,54 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
         });
     }
     
-    private static void displayMessage(Object player, String key, Object... args) {
+    @SuppressWarnings("null")
+    private static void displayMessage(net.minecraft.world.entity.player.Player player, String key, Object arg, boolean actionBar) {
         try {
-            Class<?> componentClass = Class.forName("net.minecraft.network.chat.Component");
-            Method translatableMethod = componentClass.getMethod("translatable", String.class, Object[].class);
-            Object message = translatableMethod.invoke(null, key, args);
-            Method displayClientMessageMethod = player.getClass().getMethod("displayClientMessage", componentClass, boolean.class);
-            displayClientMessageMethod.invoke(player, message, true);
+            Component message = arg != null ? Component.translatable(key, arg) : Component.translatable(key);
+            player.displayClientMessage(message, actionBar);
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error displaying message", e);
         }
     }
     
-    private static void displayProviderInfo(Object player, Object level, BlockPos pos, int index) {
+    @SuppressWarnings("null")
+    private static void displayProviderInfo(net.minecraft.world.entity.player.Player player, Level level, BlockPos pos, int index) {
         try {
-            Class<?> componentClass = Class.forName("net.minecraft.network.chat.Component");
-            Class<?> styleClass = Class.forName("net.minecraft.network.chat.Style");
-            Class<?> textColorClass = Class.forName("net.minecraft.network.chat.TextColor");
-            Class<?> clickEventClass = Class.forName("net.minecraft.network.chat.ClickEvent");
-            Class<?> clickEventActionClass = Class.forName("net.minecraft.network.chat.ClickEvent$Action");
-            Class<?> hoverEventClass = Class.forName("net.minecraft.network.chat.HoverEvent");
+            String dimensionStr = level.dimension().location().toString();
             
-            Method literalMethod = componentClass.getMethod("literal", String.class);
-            Method fromRgbMethod = textColorClass.getMethod("fromRgb", int.class);
-            Method withColorMethod = styleClass.getMethod("withColor", textColorClass);
-            Method withClickEventMethod = styleClass.getMethod("withClickEvent", clickEventClass);
-            Method withHoverEventMethod = styleClass.getMethod("withHoverEvent", hoverEventClass);
-            Method withStyleMethod = componentClass.getMethod("withStyle", styleClass);
-            Method appendMethod = componentClass.getMethod("append", componentClass);
+            double distance = Math.sqrt(player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5));
             
-            Object emptyStyle = styleClass.getField("EMPTY").get(null);
-            Object runCommandAction = clickEventActionClass.getField("RUN_COMMAND").get(null);
+            MutableComponent baseMessage = Component.literal("Provider " + index + ": ");
             
-            var dimensionMethod = level.getClass().getMethod("dimension");
-            Object dimension = dimensionMethod.invoke(level);
-            String dimensionStr = dimension.getClass().getMethod("location").invoke(dimension).toString();
+            Component dimComponent = Component.literal(dimensionStr)
+                    .withStyle(Style.EMPTY
+                            .withColor(TextColor.fromRgb(0x00FFFF))
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, 
+                                    "/execute in " + dimensionStr + " run tp " + pos.getX() + " " + pos.getY() + " " + pos.getZ()))
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal("Click to teleport to this dimension"))));
             
-            double distanceSqr = (double) player.getClass().getMethod("distanceToSqr", double.class, double.class, double.class)
-                    .invoke(player, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
-            double distance = Math.sqrt(distanceSqr);
+            Component posComponent = Component.literal(pos.getX() + ", " + pos.getY() + ", " + pos.getZ())
+                    .withStyle(Style.EMPTY
+                            .withColor(TextColor.fromRgb(0x00FF00))
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, 
+                                    "/tp " + pos.getX() + " " + pos.getY() + " " + pos.getZ()))
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal("Click to teleport to this position"))));
             
-            Object baseMessage = literalMethod.invoke(null, "Provider " + index + ": ");
+            Component distanceComponent = Component.literal(String.format("%.1f blocks", distance))
+                    .withStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFFFF00)));
             
-            Object dimComponent = literalMethod.invoke(null, dimensionStr);
-            Object style = withColorMethod.invoke(emptyStyle, fromRgbMethod.invoke(null, 0x00FFFF));
+            MutableComponent message = baseMessage
+                    .append(dimComponent)
+                    .append(Component.literal(" at "))
+                    .append(posComponent)
+                    .append(Component.literal(" ("))
+                    .append(distanceComponent)
+                    .append(Component.literal(")"));
             
-            Object clickEvent = clickEventClass.getConstructor(clickEventActionClass, String.class)
-                    .newInstance(runCommandAction, "/execute in " + dimensionStr + " run tp " + pos.getX() + " " + pos.getY() + " " + pos.getZ());
-            style = withClickEventMethod.invoke(style, clickEvent);
-            
-            Object hoverEvent = createHoverEvent(hoverEventClass, componentClass, literalMethod.invoke(null, "Click to teleport to this dimension"));
-            if (hoverEvent != null) {
-                style = withHoverEventMethod.invoke(style, hoverEvent);
-            }
-            
-            dimComponent = withStyleMethod.invoke(dimComponent, style);
-            baseMessage = appendMethod.invoke(baseMessage, dimComponent);
-            baseMessage = appendMethod.invoke(baseMessage, literalMethod.invoke(null, " at "));
-            
-            Object posComponent = literalMethod.invoke(null, pos.getX() + ", " + pos.getY() + ", " + pos.getZ());
-            style = withColorMethod.invoke(emptyStyle, fromRgbMethod.invoke(null, 0x00FF00));
-            clickEvent = clickEventClass.getConstructor(clickEventActionClass, String.class)
-                    .newInstance(runCommandAction, "/tp " + pos.getX() + " " + pos.getY() + " " + pos.getZ());
-            style = withClickEventMethod.invoke(style, clickEvent);
-            
-            hoverEvent = createHoverEvent(hoverEventClass, componentClass, literalMethod.invoke(null, "Click to teleport to this position"));
-            if (hoverEvent != null) {
-                style = withHoverEventMethod.invoke(style, hoverEvent);
-            }
-            
-            posComponent = withStyleMethod.invoke(posComponent, style);
-            baseMessage = appendMethod.invoke(baseMessage, posComponent);
-            baseMessage = appendMethod.invoke(baseMessage, literalMethod.invoke(null, " ("));
-            
-            Object distanceComponent = literalMethod.invoke(null, String.format("%.1f blocks", distance));
-            style = withColorMethod.invoke(emptyStyle, fromRgbMethod.invoke(null, 0xFFFF00));
-            distanceComponent = withStyleMethod.invoke(distanceComponent, style);
-            baseMessage = appendMethod.invoke(baseMessage, distanceComponent);
-            baseMessage = appendMethod.invoke(baseMessage, literalMethod.invoke(null, ")"));
-            
-            Method displayClientMessageMethod = player.getClass().getMethod("displayClientMessage", componentClass, boolean.class);
-            displayClientMessageMethod.invoke(player, baseMessage, false);
+            player.displayClientMessage(message, false);
             
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error creating provider message", e);
         }
-    }
-    
-    private static Object createHoverEvent(Class<?> hoverEventClass, Class<?> componentClass, Object text) {
-        try {
-            Class<?> hoverEventActionClass = Class.forName("net.minecraft.network.chat.HoverEvent$Action");
-            Object showTextAction = hoverEventActionClass.getField("SHOW_TEXT").get(null);
-            
-            try {
-                return hoverEventClass.getConstructor(hoverEventActionClass, componentClass)
-                        .newInstance(showTextAction, text);
-            } catch (Exception ignored) {}
-            
-            try {
-                Method showTextMethod = hoverEventClass.getMethod("showText", componentClass);
-                return showTextMethod.invoke(null, text);
-            } catch (Exception ignored) {}
-            
-            try {
-                Method ofMethod = hoverEventClass.getMethod("of", hoverEventActionClass, componentClass);
-                return ofMethod.invoke(null, showTextAction, text);
-            } catch (Exception ignored) {}
-            
-        } catch (Exception e) {
-            AE2CraftingLens.LOGGER.debug("Could not create HoverEvent: {}", e.getMessage());
-        }
-        return null;
     }
 }
