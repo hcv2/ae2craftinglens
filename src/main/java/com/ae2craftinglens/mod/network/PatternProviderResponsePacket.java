@@ -323,6 +323,73 @@ public record PatternProviderResponsePacket(Set<BlockPos> positions) implements 
                                 }
                             });
                             
+                            // 6. 方法变体：HoverEvent.text(Component)
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    java.lang.reflect.Method textMethod = hoverEventClass.getMethod("text", componentClass);
+                                    return textMethod.invoke(null, finalHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 7. 方法变体：HoverEvent.of(HoverEvent.Action, Object) - 尝试使用Object参数
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    java.lang.reflect.Method ofMethod = hoverEventClass.getMethod("of", hoverEventActionClass, Object.class);
+                                    return ofMethod.invoke(null, finalShowTextAction, finalHoverText);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 8. 尝试使用 ComponentContents 参数 (Minecraft 1.21+ API)
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    Class<?> componentContentsClass = Class.forName("net.minecraft.network.chat.ComponentContents");
+                                    java.lang.reflect.Method ofMethod = hoverEventClass.getMethod("of", hoverEventActionClass, componentContentsClass);
+                                    // 尝试将Component转换为ComponentContents
+                                    Object contents = null;
+                                    try {
+                                        java.lang.reflect.Method contentsMethod = componentClass.getMethod("contents");
+                                        contents = contentsMethod.invoke(finalHoverText);
+                                    } catch (Exception e) {
+                                        // 如果失败，尝试直接使用Component
+                                        contents = finalHoverText;
+                                    }
+                                    return ofMethod.invoke(null, finalShowTextAction, contents);
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
+                            // 9. 尝试使用 HoverEvent$TooltipInfo 或其他类型
+                            hoverEventAttempts.add(() -> {
+                                try {
+                                    // 尝试查找TooltipInfo类
+                                    Class<?> tooltipInfoClass = null;
+                                    try {
+                                        tooltipInfoClass = Class.forName("net.minecraft.network.chat.HoverEvent$TooltipInfo");
+                                    } catch (ClassNotFoundException e) {
+                                        try {
+                                            tooltipInfoClass = Class.forName("net.minecraft.network.chat.HoverEvent$Tooltip");
+                                        } catch (ClassNotFoundException e2) {
+                                            return null;
+                                        }
+                                    }
+                                    if (tooltipInfoClass != null) {
+                                        java.lang.reflect.Method ofMethod = hoverEventClass.getMethod("of", hoverEventActionClass, tooltipInfoClass);
+                                        // 尝试从Component创建TooltipInfo
+                                        java.lang.reflect.Constructor<?> tooltipCtor = tooltipInfoClass.getConstructor(componentClass);
+                                        Object tooltipInfo = tooltipCtor.newInstance(finalHoverText);
+                                        return ofMethod.invoke(null, finalShowTextAction, tooltipInfo);
+                                    }
+                                    return null;
+                                } catch (Exception e) {
+                                    return null;
+                                }
+                            });
+                            
                             // 尝试所有方法
                             for (java.util.function.Supplier<Object> attempt : hoverEventAttempts) {
                                 hoverEvent = attempt.get();

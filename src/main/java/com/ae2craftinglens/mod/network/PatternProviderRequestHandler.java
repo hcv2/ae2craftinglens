@@ -511,10 +511,61 @@ public class PatternProviderRequestHandler {
             String providerClassName = provider.getClass().getName();
             AE2CraftingLens.LOGGER.debug("Provider class: {}", providerClassName);
             
+            // 检查是否是 ExtendedAE 的 ex_pattern_provider
+            boolean isExtendedAEProvider = providerClassName.contains("ExPattern") || 
+                                         providerClassName.contains("ex_pattern") ||
+                                         providerClassName.contains("ExtendedAE") ||
+                                         providerClassName.contains("PartExPattern");
+            
+            AE2CraftingLens.LOGGER.debug("Is ExtendedAE provider: {}", isExtendedAEProvider);
+            
             // 方法1: 尝试找到 PatternProviderLogicHost 或 PatternProviderBlockEntity
             Object host = findFieldByTypeName(provider, "PatternProviderLogicHost");
             if (host == null) {
                 host = findFieldByTypeName(provider, "PatternProviderBlockEntity");
+            }
+            
+            // 如果是 ExtendedAE 提供器，尝试查找 ExtendedAE 特定的字段
+            if (isExtendedAEProvider && host == null) {
+                AE2CraftingLens.LOGGER.debug("Searching for ExtendedAE-specific fields");
+                host = findFieldByTypeName(provider, "ExPattern");
+                if (host == null) {
+                    host = findFieldByTypeName(provider, "ex_pattern");
+                }
+                if (host == null) {
+                    host = findFieldByTypeName(provider, "PartEx");
+                }
+                if (host == null) {
+                    host = findFieldByTypeName(provider, "ExtendedAE");
+                }
+                if (host == null) {
+                    // 尝试查找包含 "Provider" 但不包含 "Pattern" 的字段（ExtendedAE 可能使用不同的命名）
+                    try {
+                        Class<?> clazz = provider.getClass();
+                        while (clazz != null) {
+                            for (Field field : clazz.getDeclaredFields()) {
+                                field.setAccessible(true);
+                                try {
+                                    Object value = field.get(provider);
+                                    if (value != null) {
+                                        String className = value.getClass().getName();
+                                        if (className.contains("Provider") && !className.contains("Pattern")) {
+                                            AE2CraftingLens.LOGGER.debug("Found ExtendedAE provider-like field: {} with type {}", field.getName(), className);
+                                            host = value;
+                                            break;
+                                        }
+                                    }
+                                } catch (IllegalAccessException e) {
+                                    // ignore
+                                }
+                            }
+                            if (host != null) break;
+                            clazz = clazz.getSuperclass();
+                        }
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Error searching for ExtendedAE provider fields: {}", e.getMessage());
+                    }
+                }
             }
             
             // 方法2: 尝试找到 host 字段（适用于 PartExPatternProvider）
@@ -577,6 +628,81 @@ public class PatternProviderRequestHandler {
                 }
             } catch (Exception e) {
                 AE2CraftingLens.LOGGER.debug("Error getting position from part: {}", e.getMessage());
+            }
+            
+            // 方法5: 针对 ExtendedAE 的特殊处理
+            if (isExtendedAEProvider) {
+                AE2CraftingLens.LOGGER.debug("Applying ExtendedAE-specific detection methods");
+                
+                // 尝试查找 ExtendedAE 特定的字段
+                try {
+                    // ExtendedAE 可能使用不同的字段名
+                    Object extendedHost = findFieldByTypeName(provider, "ExPatternProviderHost");
+                    if (extendedHost == null) {
+                        extendedHost = findFieldByTypeName(provider, "PartExPatternProvider");
+                    }
+                    if (extendedHost == null) {
+                        extendedHost = findFieldByTypeName(provider, "ExPatternPart");
+                    }
+                    
+                    if (extendedHost != null) {
+                        AE2CraftingLens.LOGGER.debug("Found ExtendedAE host: {}", extendedHost);
+                        
+                        // 尝试从 ExtendedAE host 获取位置
+                        BlockPos pos = invokeMethod(extendedHost, "getBlockPos", BlockPos.class);
+                        if (pos != null) {
+                            AE2CraftingLens.LOGGER.debug("Found position from ExtendedAE host: {}", pos);
+                            return pos;
+                        }
+                        
+                        // 尝试获取 blockEntity
+                        Object blockEntity = invokeMethod(extendedHost, "getBlockEntity", Object.class);
+                        if (blockEntity != null) {
+                            pos = invokeMethod(blockEntity, "getBlockPos", BlockPos.class);
+                            if (pos != null) {
+                                AE2CraftingLens.LOGGER.debug("Found position from ExtendedAE blockEntity: {}", pos);
+                                return pos;
+                            }
+                        }
+                    }
+                    
+                    // 尝试直接调用 ExtendedAE 特定的方法
+                    for (Method method : provider.getClass().getMethods()) {
+                        String methodName = method.getName();
+                        if ((methodName.equals("getLocation") || methodName.equals("getPos") || 
+                             methodName.equals("getPosition") || methodName.equals("location")) && 
+                            method.getParameterCount() == 0) {
+                            try {
+                                Object result = method.invoke(provider);
+                                if (result instanceof BlockPos) {
+                                    AE2CraftingLens.LOGGER.debug("Found position via ExtendedAE method {}: {}", methodName, result);
+                                    return (BlockPos) result;
+                                }
+                            } catch (Exception e) {
+                                AE2CraftingLens.LOGGER.debug("Error calling ExtendedAE method {}: {}", methodName, e.getMessage());
+                            }
+                        }
+                    }
+                    
+                    // 尝试查找 part 或 tile 字段
+                    Object part = findFieldByTypeName(provider, "part");
+                    if (part == null) {
+                        part = findFieldByTypeName(provider, "tile");
+                    }
+                    if (part == null) {
+                        part = findFieldByTypeName(provider, "blockEntity");
+                    }
+                    
+                    if (part != null) {
+                        BlockPos pos = invokeMethod(part, "getBlockPos", BlockPos.class);
+                        if (pos != null) {
+                            AE2CraftingLens.LOGGER.debug("Found position from ExtendedAE part/tile: {}", pos);
+                            return pos;
+                        }
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error in ExtendedAE-specific detection: {}", e.getMessage());
+                }
             }
             
         } catch (Exception e) {
