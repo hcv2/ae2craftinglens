@@ -4,15 +4,13 @@ import java.lang.reflect.Method;
 
 import com.ae2craftinglens.mod.AE2CraftingLens;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-import org.jetbrains.annotations.Nullable;
 
-public record RequestPatternProvidersPacket(Object what, @Nullable BlockPos targetPos) implements CustomPacketPayload {
+public record RequestPatternProvidersPacket(Object what) implements CustomPacketPayload {
     
     @SuppressWarnings("null")
     public static final Type<RequestPatternProvidersPacket> TYPE = 
@@ -26,23 +24,16 @@ public record RequestPatternProvidersPacket(Object what, @Nullable BlockPos targ
     
     private static void encode(RegistryFriendlyByteBuf buffer, RequestPatternProvidersPacket packet) {
         try {
-            if (packet.what() == null) {
+            if (packet.what == null) {
                 buffer.writeBoolean(false);
-            } else {
-                buffer.writeBoolean(true);
-                Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
-                Method writeKeyMethod = aeKeyClass.getMethod("writeKey", RegistryFriendlyByteBuf.class, aeKeyClass);
-                writeKeyMethod.invoke(null, buffer, packet.what());
+                return;
             }
+            buffer.writeBoolean(true);
+            Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
+            Method writeKeyMethod = aeKeyClass.getMethod("writeKey", RegistryFriendlyByteBuf.class, aeKeyClass);
+            writeKeyMethod.invoke(null, buffer, packet.what);
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error encoding AEKey", e);
-            buffer.writeBoolean(false);
-        }
-
-        if (packet.targetPos() != null) {
-            buffer.writeBoolean(true);
-            buffer.writeBlockPos(packet.targetPos());
-        } else {
             buffer.writeBoolean(false);
         }
     }
@@ -50,23 +41,16 @@ public record RequestPatternProvidersPacket(Object what, @Nullable BlockPos targ
     private static RequestPatternProvidersPacket decode(RegistryFriendlyByteBuf buffer) {
         try {
             boolean hasKey = buffer.readBoolean();
-            Object what = null;
-            if (hasKey) {
-                Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
-                Method readKeyMethod = aeKeyClass.getMethod("readKey", RegistryFriendlyByteBuf.class);
-                what = readKeyMethod.invoke(null, buffer);
+            if (!hasKey) {
+                return new RequestPatternProvidersPacket(null);
             }
-
-            BlockPos targetPos = null;
-            boolean hasTargetPos = buffer.readBoolean();
-            if (hasTargetPos) {
-                targetPos = buffer.readBlockPos();
-            }
-
-            return new RequestPatternProvidersPacket(what, targetPos);
+            Class<?> aeKeyClass = Class.forName("appeng.api.stacks.AEKey");
+            Method readKeyMethod = aeKeyClass.getMethod("readKey", RegistryFriendlyByteBuf.class);
+            Object what = readKeyMethod.invoke(null, buffer);
+            return new RequestPatternProvidersPacket(what);
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error decoding AEKey", e);
-            return new RequestPatternProvidersPacket(null, null);
+            return new RequestPatternProvidersPacket(null);
         }
     }
     
