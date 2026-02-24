@@ -2,18 +2,19 @@ package com.ae2craftinglens.mod;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 
 public class PatternProviderHighlightManager {
     private static final PatternProviderHighlightManager INSTANCE = new PatternProviderHighlightManager();
     
-    private final Map<UUID, List<HighlightedProvider>> playerHighlights = new HashMap<>();
+    private final Map<UUID, List<HighlightedProvider>> playerHighlights = new ConcurrentHashMap<>();
     private static final long HIGHLIGHT_DURATION_MS = 12000;
     
     private PatternProviderHighlightManager() {}
@@ -100,13 +101,13 @@ public class PatternProviderHighlightManager {
     
     public static class HighlightedProvider {
         private final UUID playerId;
-        private final Level level;
+        private final ResourceKey<Level> dimension;
         private final BlockPos pos;
         private final long expireTime;
         
         public HighlightedProvider(UUID playerId, Level level, BlockPos pos, long expireTime) {
             this.playerId = playerId;
-            this.level = level;
+            this.dimension = level.dimension();
             this.pos = pos;
             this.expireTime = expireTime;
         }
@@ -115,8 +116,8 @@ public class PatternProviderHighlightManager {
             return playerId;
         }
         
-        public Level getLevel() {
-            return level;
+        public ResourceKey<Level> getDimension() {
+            return dimension;
         }
         
         public BlockPos getPos() {
@@ -128,7 +129,7 @@ public class PatternProviderHighlightManager {
         }
         
         public boolean matches(Level level, BlockPos pos) {
-            return this.level == level && this.pos.equals(pos);
+            return this.dimension.equals(level.dimension()) && this.pos.equals(pos);
         }
         
         public float getRemainingSeconds() {

@@ -52,7 +52,7 @@ public class PatternProviderHighlightRenderer {
         MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
         
         for (PatternProviderHighlightManager.HighlightedProvider hp : manager.getActiveHighlights(player.getUUID())) {
-            if (hp.getLevel() == level) {
+            if (hp.getDimension().equals(level.dimension())) {
                 renderHighlight(poseStack, bufferSource, hp.getPos(), hp.getRemainingSeconds());
             }
         }
