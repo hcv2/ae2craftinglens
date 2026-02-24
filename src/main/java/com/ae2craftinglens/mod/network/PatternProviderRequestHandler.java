@@ -184,6 +184,66 @@ public class PatternProviderRequestHandler {
             
             Set<Object> relevantPatterns = new HashSet<>();
             
+            Object craftingLogic = null;
+            try {
+                Field craftingLogicField = cluster.getClass().getField("craftingLogic");
+                craftingLogic = craftingLogicField.get(cluster);
+                AE2CraftingLens.LOGGER.info("Found craftingLogic field: {}", craftingLogic);
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Error getting craftingLogic field: {}", e.getMessage());
+                try {
+                    craftingLogic = findFieldByTypeName(cluster, "CraftingCpuLogic");
+                } catch (Exception e2) {
+                    AE2CraftingLens.LOGGER.debug("Error finding CraftingCpuLogic: {}", e2.getMessage());
+                }
+            }
+            
+            if (craftingLogic != null) {
+                Object job = null;
+                try {
+                    Field jobField = craftingLogic.getClass().getDeclaredField("job");
+                    jobField.setAccessible(true);
+                    job = jobField.get(craftingLogic);
+                    AE2CraftingLens.LOGGER.info("Found job from craftingLogic: {}", job != null);
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error getting job field: {}", e.getMessage());
+                }
+                
+                if (job != null) {
+                    try {
+                        Field tasksField = job.getClass().getDeclaredField("tasks");
+                        tasksField.setAccessible(true);
+                        Object tasks = tasksField.get(job);
+                        
+                        if (tasks instanceof java.util.Map) {
+                            java.util.Map<?, ?> tasksMap = (java.util.Map<?, ?>) tasks;
+                            AE2CraftingLens.LOGGER.info("Found {} tasks in job", tasksMap.size());
+                            
+                            for (Object pattern : tasksMap.keySet()) {
+                                if (pattern != null) {
+                                    relevantPatterns.add(pattern);
+                                    AE2CraftingLens.LOGGER.info("Found pattern from job.tasks: {}", pattern);
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Error getting tasks from job: {}", e.getMessage());
+                    }
+                    
+                    try {
+                        Field waitingForField = job.getClass().getDeclaredField("waitingFor");
+                        waitingForField.setAccessible(true);
+                        Object waitingFor = waitingForField.get(job);
+                        
+                        if (waitingFor != null) {
+                            AE2CraftingLens.LOGGER.info("Found waitingFor field in job");
+                        }
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Error getting waitingFor from job: {}", e.getMessage());
+                    }
+                }
+            }
+            
             try {
                 Method getWaitingTasksMethod = cluster.getClass().getMethod("getWaitingTasks");
                 Iterable<?> waitingTasks = (Iterable<?>) getWaitingTasksMethod.invoke(cluster);
@@ -195,10 +255,8 @@ public class PatternProviderRequestHandler {
                             Method getPatternMethod = task.getClass().getMethod("getPattern");
                             Object pattern = getPatternMethod.invoke(task);
                             if (pattern != null) {
-                                if (targetKey == null || isPatternRelevantToTarget(pattern, targetKey, craftingService)) {
-                                    relevantPatterns.add(pattern);
-                                    AE2CraftingLens.LOGGER.info("Found relevant pattern from waiting task: {}", pattern);
-                                }
+                                relevantPatterns.add(pattern);
+                                AE2CraftingLens.LOGGER.info("Found pattern from waiting task: {}", pattern);
                             }
                         } catch (Exception e) {
                             AE2CraftingLens.LOGGER.debug("Error getting pattern from waiting task: {}", e.getMessage());
@@ -207,57 +265,6 @@ public class PatternProviderRequestHandler {
                 }
             } catch (Exception e) {
                 AE2CraftingLens.LOGGER.debug("Error getting waiting tasks: {}", e.getMessage());
-            }
-            
-            try {
-                Field tasksField = cluster.getClass().getDeclaredField("tasks");
-                tasksField.setAccessible(true);
-                Object tasks = tasksField.get(cluster);
-                
-                if (tasks != null && tasks instanceof Iterable) {
-                    AE2CraftingLens.LOGGER.info("Found tasks field");
-                    for (Object task : (Iterable<?>) tasks) {
-                        try {
-                            Method getPatternMethod = task.getClass().getMethod("getPattern");
-                            Object pattern = getPatternMethod.invoke(task);
-                            if (pattern != null) {
-                                if (targetKey == null || isPatternRelevantToTarget(pattern, targetKey, craftingService)) {
-                                    relevantPatterns.add(pattern);
-                                    AE2CraftingLens.LOGGER.info("Found relevant pattern from tasks field: {}", pattern);
-                                }
-                            }
-                        } catch (Exception e) {
-                            AE2CraftingLens.LOGGER.debug("Error getting pattern from task: {}", e.getMessage());
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error getting tasks field: {}", e.getMessage());
-            }
-            
-            try {
-                Method getActiveTasksMethod = cluster.getClass().getMethod("getActiveTasks");
-                Iterable<?> activeTasks = (Iterable<?>) getActiveTasksMethod.invoke(cluster);
-                
-                if (activeTasks != null) {
-                    AE2CraftingLens.LOGGER.info("Found active tasks");
-                    for (Object task : activeTasks) {
-                        try {
-                            Method getPatternMethod = task.getClass().getMethod("getPattern");
-                            Object pattern = getPatternMethod.invoke(task);
-                            if (pattern != null) {
-                                if (targetKey == null || isPatternRelevantToTarget(pattern, targetKey, craftingService)) {
-                                    relevantPatterns.add(pattern);
-                                    AE2CraftingLens.LOGGER.info("Found relevant pattern from active task: {}", pattern);
-                                }
-                            }
-                        } catch (Exception e) {
-                            AE2CraftingLens.LOGGER.debug("Error getting pattern from active task: {}", e.getMessage());
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error getting active tasks: {}", e.getMessage());
             }
             
             Class<?> patternDetailsClass = Class.forName("appeng.api.crafting.IPatternDetails");
