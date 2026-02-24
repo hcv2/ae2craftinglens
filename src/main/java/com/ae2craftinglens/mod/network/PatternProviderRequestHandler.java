@@ -22,9 +22,12 @@ public class PatternProviderRequestHandler {
         }
         
         Object targetKey = packet.what();
+        BlockPos targetPos = packet.targetPos();
         
-        if (targetKey == null) {
+        if (targetKey == null && targetPos == null) {
             AE2CraftingLens.LOGGER.info("Received null AEKey, looking for all active pattern providers in current crafting job");
+        } else if (targetPos != null) {
+            AE2CraftingLens.LOGGER.info("Received target position: {}, highlighting specific pattern provider", targetPos);
         } else {
             AE2CraftingLens.LOGGER.info("Looking for pattern providers for: {}", targetKey);
         }
@@ -85,11 +88,12 @@ public class PatternProviderRequestHandler {
             
             Set<BlockPos> providerPositions = new HashSet<>();
             
-            if (containerClassName.contains("CraftingStatusMenu")) {
+            if (targetPos != null) {
+                providerPositions.add(targetPos);
+                AE2CraftingLens.LOGGER.info("Using target position directly: {}", targetPos);
+            } else if (containerClassName.contains("CraftingStatusMenu")) {
                 providerPositions = findProvidersFromCurrentCraftingJob(player.containerMenu, craftingService, targetKey);
-            }
-            
-            if (providerPositions.isEmpty()) {
+            } else if (providerPositions.isEmpty()) {
                 providerPositions = targetKey == null ? 
                     findAllActivePatternProviders(grid, player.containerMenu) : 
                     findPatternProvidersForKey(grid, targetKey);

@@ -135,7 +135,7 @@ public class CraftingScreenHandler {
                 AE2CraftingLens.LOGGER.warn("No AEKey available, sending request without specific item");
             }
             
-            RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey);
+            RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey, null);
             if (AE2CraftingLens.isDebugLoggingEnabled()) {
                 AE2CraftingLens.LOGGER.info("Sending RequestPatternProvidersPacket with AEKey");
             }
