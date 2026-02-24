@@ -2,6 +2,7 @@ package com.ae2craftinglens.mod;
 
 import org.joml.Matrix4f;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -26,24 +27,31 @@ import java.util.OptionalDouble;
 @EventBusSubscriber(modid = AE2CraftingLens.MODID, value = Dist.CLIENT)
 public class PatternProviderHighlightRenderer {
     
-    private static final RenderType HIGHLIGHT_LINES = RenderType.create(
-        "ae2craftinglens_highlight",
-        DefaultVertexFormat.POSITION_COLOR_NORMAL,
-        VertexFormat.Mode.LINES,
-        65536,
-        false,
-        false,
-        RenderType.CompositeState.builder()
-                .setLineState(new RenderType.LineStateShard(OptionalDouble.of(3.0)))
-                .setTransparencyState(RenderType.TransparencyStateShard.GLINT_TRANSPARENCY)
-                .setTextureState(RenderType.TextureStateShard.NO_TEXTURE)
-                .setDepthTestState(RenderType.DepthTestStateShard.NO_DEPTH_TEST)
-                .setCullState(RenderType.CullStateShard.NO_CULL)
-                .setLightmapState(RenderType.LightmapStateShard.NO_LIGHTMAP)
-                .setWriteMaskState(RenderType.WriteMaskStateShard.COLOR_DEPTH_WRITE)
-                .setShaderState(RenderType.ShaderStateShard.RENDERTYPE_LINES_SHADER)
-                .createCompositeState(false)
-    );
+    private static RenderType highlightLines = null;
+    
+    private static RenderType getHighlightLines() {
+        if (highlightLines == null) {
+            highlightLines = RenderType.create(
+                "ae2craftinglens_highlight",
+                DefaultVertexFormat.POSITION_COLOR_NORMAL,
+                VertexFormat.Mode.LINES,
+                65536,
+                false,
+                false,
+                RenderType.CompositeState.builder()
+                        .setLineState(new RenderType.LineStateShard(OptionalDouble.of(3.0)))
+                        .setTransparencyState(RenderType.TransparencyStateShard.GLINT_TRANSPARENCY)
+                        .setTextureState(RenderType.TextureStateShard.NO_TEXTURE)
+                        .setDepthTestState(RenderType.DepthTestStateShard.NO_DEPTH_TEST)
+                        .setCullState(RenderType.CullStateShard.NO_CULL)
+                        .setLightmapState(RenderType.LightmapStateShard.NO_LIGHTMAP)
+                        .setWriteMaskState(RenderType.WriteMaskStateShard.COLOR_DEPTH_WRITE)
+                        .setShaderState(RenderType.ShaderStateShard.RENDERTYPE_LINES_SHADER)
+                        .createCompositeState(false)
+            );
+        }
+        return highlightLines;
+    }
     
     @SubscribeEvent
     public static void onRenderWorld(RenderLevelStageEvent event) {
@@ -75,18 +83,27 @@ public class PatternProviderHighlightRenderer {
         
         MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
         
+        RenderSystem.disableDepthTest();
+        RenderSystem.enableBlend();
+        
+        VertexConsumer vertexConsumer = bufferSource.getBuffer(getHighlightLines());
+        
         for (PatternProviderHighlightManager.HighlightedProvider hp : manager.getActiveHighlights(player.getUUID())) {
             if (hp.getDimension().equals(level.dimension())) {
-                renderHighlight(poseStack, bufferSource, hp.getPos(), hp.getRemainingSeconds());
+                renderHighlight(poseStack, vertexConsumer, hp.getPos(), hp.getRemainingSeconds());
             }
         }
         
         bufferSource.endBatch();
         
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        
         poseStack.popPose();
     }
     
-    private static void renderHighlight(PoseStack poseStack, MultiBufferSource bufferSource, BlockPos pos, float remainingSeconds) {
+    private static void renderHighlight(PoseStack poseStack, VertexConsumer consumer, BlockPos pos, float remainingSeconds) {
         float alpha = Math.min(1.0f, remainingSeconds / 2.0f);
         float pulse = (float) (0.5 + 0.5 * Math.sin(System.currentTimeMillis() / 200.0));
         float r = 0.2f + 0.3f * pulse;
@@ -95,15 +112,13 @@ public class PatternProviderHighlightRenderer {
         
         AABB box = new AABB(pos).inflate(0.002);
         
-        VertexConsumer vertexConsumer = bufferSource.getBuffer(HIGHLIGHT_LINES);
-        
-        renderBox(poseStack, vertexConsumer, box, r, g, b, alpha);
+        renderBox(poseStack, consumer, box, r, g, b, alpha);
         
         float offset = 0.0005f;
         AABB boxOffset1 = box.inflate(offset);
-        renderBox(poseStack, vertexConsumer, boxOffset1, r, g, b, alpha * 0.8f);
+        renderBox(poseStack, consumer, boxOffset1, r, g, b, alpha * 0.8f);
         AABB boxOffset2 = box.inflate(-offset);
-        renderBox(poseStack, vertexConsumer, boxOffset2, r, g, b, alpha * 0.8f);
+        renderBox(poseStack, consumer, boxOffset2, r, g, b, alpha * 0.8f);
     }
     
     private static void renderBox(PoseStack poseStack, VertexConsumer consumer, AABB box, float r, float g, float b, float a) {
