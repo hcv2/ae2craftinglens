@@ -521,7 +521,6 @@ public class PatternProviderRequestHandler {
             
             // 方法0: 检查 provider 本身是否实现了 PatternProviderLogicHost 接口
             Object host = null;
-            boolean isPatternProviderLogicHost = false;
             try {
                 // 尝试查找 PatternProviderLogicHost 接口
                 Class<?> patternProviderLogicHostClass = null;
@@ -537,7 +536,6 @@ public class PatternProviderRequestHandler {
                 
                 if (patternProviderLogicHostClass != null && patternProviderLogicHostClass.isInstance(provider)) {
                     AE2CraftingLens.LOGGER.debug("Provider implements PatternProviderLogicHost interface");
-                    isPatternProviderLogicHost = true;
                     host = provider; // provider 本身就是 host
                 }
             } catch (Exception e) {
