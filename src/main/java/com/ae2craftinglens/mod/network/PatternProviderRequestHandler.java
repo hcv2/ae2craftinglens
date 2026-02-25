@@ -867,33 +867,97 @@ public class PatternProviderRequestHandler {
                                          providerClassName.contains("ExtendedAE") ||
                                          providerClassName.contains("PartExPattern");
             
-            AE2CraftingLens.LOGGER.debug("Is ExtendedAE provider: {}", isExtendedAEProvider);
+            boolean isAdvancedAEProvider = providerClassName.contains("AdvPatternProvider") ||
+                                          providerClassName.contains("advanced_ae");
+            
+            AE2CraftingLens.LOGGER.debug("Is ExtendedAE provider: {}, Is AdvancedAE provider: {}", isExtendedAEProvider, isAdvancedAEProvider);
             
             Object host = null;
-            try {
-                Class<?> patternProviderLogicHostClass = null;
+            
+            // First try AdvancedAE's AdvPatternProviderLogicHost interface
+            if (isAdvancedAEProvider) {
                 try {
-                    patternProviderLogicHostClass = Class.forName("appeng.helpers.patternprovider.PatternProviderLogicHost");
-                } catch (ClassNotFoundException e) {
-                    try {
-                        patternProviderLogicHostClass = Class.forName("appeng.api.helpers.IPatternProviderLogicHost");
-                    } catch (ClassNotFoundException e2) {
-                        // continue
+                    Class<?> advPatternProviderLogicHostClass = Class.forName("net.pedroksl.advanced_ae.common.logic.AdvPatternProviderLogicHost");
+                    if (advPatternProviderLogicHostClass.isInstance(provider)) {
+                        AE2CraftingLens.LOGGER.debug("Provider implements AdvPatternProviderLogicHost interface");
+                        // For AdvPatternProviderLogic, we need to get the host field
+                        try {
+                            Field hostField = provider.getClass().getDeclaredField("host");
+                            hostField.setAccessible(true);
+                            host = hostField.get(provider);
+                            AE2CraftingLens.LOGGER.debug("Found host from AdvPatternProviderLogic: {}", host);
+                        } catch (Exception e) {
+                            AE2CraftingLens.LOGGER.debug("Error getting host from AdvPatternProviderLogic: {}", e.getMessage());
+                        }
                     }
+                } catch (ClassNotFoundException e) {
+                    AE2CraftingLens.LOGGER.debug("AdvPatternProviderLogicHost class not found: {}", e.getMessage());
                 }
-                
-                if (patternProviderLogicHostClass != null && patternProviderLogicHostClass.isInstance(provider)) {
-                    AE2CraftingLens.LOGGER.debug("Provider implements PatternProviderLogicHost interface");
-                    host = provider;
+            }
+            
+            // Try standard AE2 PatternProviderLogicHost interface
+            if (host == null) {
+                try {
+                    Class<?> patternProviderLogicHostClass = null;
+                    try {
+                        patternProviderLogicHostClass = Class.forName("appeng.helpers.patternprovider.PatternProviderLogicHost");
+                    } catch (ClassNotFoundException e) {
+                        try {
+                            patternProviderLogicHostClass = Class.forName("appeng.api.helpers.IPatternProviderLogicHost");
+                        } catch (ClassNotFoundException e2) {
+                            // continue
+                        }
+                    }
+                    
+                    if (patternProviderLogicHostClass != null && patternProviderLogicHostClass.isInstance(provider)) {
+                        AE2CraftingLens.LOGGER.debug("Provider implements PatternProviderLogicHost interface");
+                        host = provider;
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error checking PatternProviderLogicHost interface: {}", e.getMessage());
                 }
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error checking PatternProviderLogicHost interface: {}", e.getMessage());
+            }
+            
+            // Try to get host via getHost() method
+            if (host == null) {
+                try {
+                    Method getHostMethod = provider.getClass().getMethod("getHost");
+                    host = getHostMethod.invoke(provider);
+                    if (host != null) {
+                        AE2CraftingLens.LOGGER.debug("Found host via getHost() method: {}", host);
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error calling getHost() method: {}", e.getMessage());
+                }
+            }
+            
+            // Try to get host via "host" field directly (for PatternProviderLogic and AdvPatternProviderLogic)
+            if (host == null) {
+                try {
+                    Field hostField = provider.getClass().getDeclaredField("host");
+                    hostField.setAccessible(true);
+                    host = hostField.get(provider);
+                    if (host != null) {
+                        AE2CraftingLens.LOGGER.debug("Found host via host field: {}", host);
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error getting host field: {}", e.getMessage());
+                }
             }
             
             if (host == null) {
                 host = findFieldByTypeName(provider, "PatternProviderLogicHost");
                 if (host == null) {
                     host = findFieldByTypeName(provider, "PatternProviderBlockEntity");
+                }
+                if (host == null) {
+                    host = findFieldByTypeName(provider, "AdvPatternProviderLogicHost");
+                }
+                if (host == null) {
+                    host = findFieldByTypeName(provider, "AdvPatternProviderEntity");
+                }
+                if (host == null) {
+                    host = findFieldByTypeName(provider, "AdvPatternProviderPart");
                 }
             }
             
@@ -911,36 +975,45 @@ public class PatternProviderRequestHandler {
                 }
             }
             
-            if (host == null) {
-                try {
-                    Method getHostMethod = provider.getClass().getMethod("getHost");
-                    host = getHostMethod.invoke(provider);
-                    if (host != null) {
-                        AE2CraftingLens.LOGGER.debug("Found host via getHost() method");
-                    }
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.debug("Error calling getHost() method: {}", e.getMessage());
-                }
-            }
-            
             if (host != null) {
+                AE2CraftingLens.LOGGER.debug("Found host: {}, class: {}", host, host.getClass().getName());
+                
+                // Try getBlockEntity() method
                 Object blockEntity = invokeMethod(host, "getBlockEntity", Object.class);
-                if (blockEntity == null) {
-                    BlockPos pos = invokeMethod(host, "getBlockPos", BlockPos.class);
+                if (blockEntity != null) {
+                    AE2CraftingLens.LOGGER.debug("Found blockEntity via getBlockEntity(): {}", blockEntity);
+                    BlockPos pos = invokeMethod(blockEntity, "getBlockPos", BlockPos.class);
                     if (pos != null) {
-                        AE2CraftingLens.LOGGER.debug("Found position directly from host: {}", pos);
+                        AE2CraftingLens.LOGGER.debug("Found position from blockEntity: {}", pos);
                         return pos;
                     }
-                    blockEntity = host;
                 }
                 
-                BlockPos pos = invokeMethod(blockEntity, "getBlockPos", BlockPos.class);
+                // Try getBlockPos() directly on host
+                BlockPos pos  = invokeMethod(host, "getBlockPos", BlockPos.class);
                 if (pos != null) {
-                    AE2CraftingLens.LOGGER.debug("Found position from blockEntity: {}", pos);
+                    AE2CraftingLens.LOGGER.debug("Found position directly from host: {}", pos);
                     return pos;
+                }
+                
+                // For parts, try getHost().getBlockPos()
+                try {
+                    Method getHostMethod = host.getClass().getMethod("getHost");
+                    Object partHost = getHostMethod.invoke(host);
+                    if (partHost != null) {
+                        AE2CraftingLens.LOGGER.debug("Found part host via getHost(): {}", partHost);
+                        BlockPos partPos = invokeMethod(partHost, "getBlockPos", BlockPos.class);
+                        if (partPos != null) {
+                            AE2CraftingLens.LOGGER.debug("Found position from part host: {}", partPos);
+                            return partPos;
+                        }
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error getting part host: {}", e.getMessage());
                 }
             }
             
+            // Try getBlockPos() directly on provider
             for (Method method : provider.getClass().getMethods()) {
                 if (method.getName().equals("getBlockPos") && method.getParameterCount() == 0) {
                     try {
@@ -955,8 +1028,12 @@ public class PatternProviderRequestHandler {
                 }
             }
             
+            // For parts, try to find the part field and get its position
             try {
                 Object part = findFieldByTypeName(provider, "Part");
+                if (part == null) {
+                    part = findFieldByTypeName(provider, "part");
+                }
                 if (part != null) {
                     BlockPos pos = invokeMethod(part, "getBlockPos", BlockPos.class);
                     if (pos != null) {
@@ -1018,6 +1095,8 @@ public class PatternProviderRequestHandler {
                     AE2CraftingLens.LOGGER.debug("Error in ExtendedAE-specific detection: {}", e.getMessage());
                 }
             }
+            
+            AE2CraftingLens.LOGGER.warn("Could not find position for provider: {}", providerClassName);
             
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.debug("Error getting provider position: {}", e.getMessage());
