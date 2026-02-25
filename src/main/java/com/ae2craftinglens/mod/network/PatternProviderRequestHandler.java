@@ -123,106 +123,84 @@ public class PatternProviderRequestHandler {
         try {
             AE2CraftingLens.LOGGER.info("Finding providers from current crafting job in CraftingStatusMenu, targetKey: {}", targetKey);
             
-            Object selectedCpu = null;
-            try {
-                Method getCpuMethod = menu.getClass().getMethod("getCPU");
-                selectedCpu = getCpuMethod.invoke(menu);
-                AE2CraftingLens.LOGGER.info("Got CPU from getCPU(): {}", selectedCpu);
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error getting CPU from getCPU(): {}", e.getMessage());
-            }
+            Object cluster = deepFindCraftingCPUCluster(menu);
             
-            if (selectedCpu == null) {
-                try {
-                    Field cpuField = menu.getClass().getDeclaredField("cpu");
-                    cpuField.setAccessible(true);
-                    selectedCpu = cpuField.get(menu);
-                    AE2CraftingLens.LOGGER.info("Got CPU from cpu field: {}", selectedCpu);
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.debug("Error getting cpu field: {}", e.getMessage());
-                }
-            }
-            
-            if (selectedCpu != null) {
-                AE2CraftingLens.LOGGER.info("Selected CPU class: {}", selectedCpu.getClass().getName());
+            if (cluster != null) {
+                AE2CraftingLens.LOGGER.info("Found cluster via deep scan: {}", cluster.getClass().getName());
+                Set<BlockPos> clusterProviders = findProvidersFromClusterForTarget(cluster, craftingService, targetKey, true);
                 
-                Object cluster = selectedCpu;
-                
-                if (!cluster.getClass().getSimpleName().contains("Cluster")) {
-                    try {
-                        Field clusterField = cluster.getClass().getDeclaredField("cluster");
-                        clusterField.setAccessible(true);
-                        cluster = clusterField.get(cluster);
-                        AE2CraftingLens.LOGGER.info("Got cluster from CPU: {}", cluster);
-                    } catch (Exception e) {
-                        AE2CraftingLens.LOGGER.debug("Error getting cluster from CPU: {}", e.getMessage());
-                    }
-                }
-                
-                if (cluster != null) {
-                    AE2CraftingLens.LOGGER.info("Processing cluster: {}", cluster.getClass().getName());
-                    Set<BlockPos> clusterProviders = findProvidersFromClusterForTarget(cluster, craftingService, targetKey, true);
-                    
-                    if (!clusterProviders.isEmpty()) {
-                        AE2CraftingLens.LOGGER.info("Found providers for selected CPU: {}", clusterProviders.size());
-                        return clusterProviders;
-                    }
+                if (!clusterProviders.isEmpty()) {
+                    AE2CraftingLens.LOGGER.info("Found providers for selected CPU: {}", clusterProviders.size());
+                    return clusterProviders;
                 }
             }
             
-            int selectedCpuSerial = -1;
-            try {
-                Method getSelectedCpuSerialMethod = menu.getClass().getMethod("getSelectedCpuSerial");
-                selectedCpuSerial = (int) getSelectedCpuSerialMethod.invoke(menu);
-                AE2CraftingLens.LOGGER.info("Selected CPU serial (fallback): {}", selectedCpuSerial);
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error getting selected CPU serial: {}", e.getMessage());
-            }
-            
-            if (selectedCpuSerial == -1) {
-                return positions;
-            }
-            
-            Field cpuListField = menu.getClass().getDeclaredField("cpuList");
-            cpuListField.setAccessible(true);
-            Object cpuList = cpuListField.get(menu);
-            
-            if (cpuList == null) {
-                AE2CraftingLens.LOGGER.info("cpuList is null");
-                return positions;
-            }
-            
-            Field cpusField = cpuList.getClass().getDeclaredField("cpus");
-            cpusField.setAccessible(true);
-            Iterable<?> cpus = (Iterable<?>) cpusField.get(cpuList);
-            
-            if (cpus == null) {
-                AE2CraftingLens.LOGGER.info("cpus list is null");
-                return positions;
-            }
-            
-            for (Object cpu : cpus) {
-                int cpuSerial = -1;
-                try {
-                    Method serialMethod = cpu.getClass().getMethod("serial");
-                    cpuSerial = (int) serialMethod.invoke(cpu);
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.debug("Error getting CPU serial: {}", e.getMessage());
-                }
-                
-                if (cpuSerial == selectedCpuSerial) {
-                    AE2CraftingLens.LOGGER.info("Found matching CPU by serial: {}", cpuSerial);
-                    break;
-                }
-            }
-            
-            AE2CraftingLens.LOGGER.info("Processed CPUs from cpuList but selected CPU was null");
+            AE2CraftingLens.LOGGER.info("Deep scan did not find cluster or no providers found");
             
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error finding providers from current crafting job: {}", e.getMessage());
         }
         
         return positions;
+    }
+    
+    private static Object deepFindCraftingCPUCluster(Object obj) {
+        if (obj == null) return null;
+        
+        Set<Object> visited = new HashSet<>();
+        return deepFindCraftingCPUClusterRecursive(obj, visited, 0);
+    }
+    
+    private static Object deepFindCraftingCPUClusterRecursive(Object obj, Set<Object> visited, int depth) {
+        if (obj == null || depth > 5 || visited.contains(obj)) return null;
+        visited.add(obj);
+        
+        String className = obj.getClass().getName();
+        if (className.contains("CraftingCPUCluster")) {
+            AE2CraftingLens.LOGGER.info("Found CraftingCPUCluster at depth {}: {}", depth, className);
+            return obj;
+        }
+        
+        for (Field field : obj.getClass().getDeclaredFields()) {
+            field.setAccessible(true);
+            try {
+                Object fieldValue = field.get(obj);
+                if (fieldValue != null) {
+                    if (fieldValue.getClass().getName().contains("CraftingCPUCluster")) {
+                        AE2CraftingLens.LOGGER.info("Found CraftingCPUCluster in field '{}' at depth {}", field.getName(), depth);
+                        return fieldValue;
+                    }
+                    
+                    if (!fieldValue.getClass().getName().startsWith("java.") && 
+                        !fieldValue.getClass().getName().startsWith("net.minecraft")) {
+                        Object result = deepFindCraftingCPUClusterRecursive(fieldValue, visited, depth + 1);
+                        if (result != null) return result;
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        
+        for (Method method : obj.getClass().getDeclaredMethods()) {
+            if (method.getParameterCount() == 0 && !method.getReturnType().equals(Void.TYPE)) {
+                String methodName = method.getName();
+                if (methodName.contains("Cpu") || methodName.contains("Cluster") || 
+                    methodName.contains("cpu") || methodName.contains("cluster")) {
+                    try {
+                        Object result = method.invoke(obj);
+                        if (result != null && result.getClass().getName().contains("CraftingCPUCluster")) {
+                            AE2CraftingLens.LOGGER.info("Found CraftingCPUCluster via method '{}' at depth {}", methodName, depth);
+                            return result;
+                        }
+                    } catch (Exception e) {
+                        // Ignore
+                    }
+                }
+            }
+        }
+        
+        return null;
     }
     
     private static Set<BlockPos> findProvidersFromClusterForTarget(Object cluster, Object craftingService, Object targetKey, boolean isSelectedCpu) {
