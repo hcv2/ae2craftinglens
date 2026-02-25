@@ -123,13 +123,64 @@ public class PatternProviderRequestHandler {
         try {
             AE2CraftingLens.LOGGER.info("Finding providers from current crafting job in CraftingStatusMenu, targetKey: {}", targetKey);
             
+            Object selectedCpu = null;
+            try {
+                Method getCpuMethod = menu.getClass().getMethod("getCPU");
+                selectedCpu = getCpuMethod.invoke(menu);
+                AE2CraftingLens.LOGGER.info("Got CPU from getCPU(): {}", selectedCpu);
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Error getting CPU from getCPU(): {}", e.getMessage());
+            }
+            
+            if (selectedCpu == null) {
+                try {
+                    Field cpuField = menu.getClass().getDeclaredField("cpu");
+                    cpuField.setAccessible(true);
+                    selectedCpu = cpuField.get(menu);
+                    AE2CraftingLens.LOGGER.info("Got CPU from cpu field: {}", selectedCpu);
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error getting cpu field: {}", e.getMessage());
+                }
+            }
+            
+            if (selectedCpu != null) {
+                AE2CraftingLens.LOGGER.info("Selected CPU class: {}", selectedCpu.getClass().getName());
+                
+                Object cluster = selectedCpu;
+                
+                if (!cluster.getClass().getSimpleName().contains("Cluster")) {
+                    try {
+                        Field clusterField = cluster.getClass().getDeclaredField("cluster");
+                        clusterField.setAccessible(true);
+                        cluster = clusterField.get(cluster);
+                        AE2CraftingLens.LOGGER.info("Got cluster from CPU: {}", cluster);
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Error getting cluster from CPU: {}", e.getMessage());
+                    }
+                }
+                
+                if (cluster != null) {
+                    AE2CraftingLens.LOGGER.info("Processing cluster: {}", cluster.getClass().getName());
+                    Set<BlockPos> clusterProviders = findProvidersFromClusterForTarget(cluster, craftingService, targetKey, true);
+                    
+                    if (!clusterProviders.isEmpty()) {
+                        AE2CraftingLens.LOGGER.info("Found providers for selected CPU: {}", clusterProviders.size());
+                        return clusterProviders;
+                    }
+                }
+            }
+            
             int selectedCpuSerial = -1;
             try {
                 Method getSelectedCpuSerialMethod = menu.getClass().getMethod("getSelectedCpuSerial");
                 selectedCpuSerial = (int) getSelectedCpuSerialMethod.invoke(menu);
-                AE2CraftingLens.LOGGER.info("Selected CPU serial: {}", selectedCpuSerial);
+                AE2CraftingLens.LOGGER.info("Selected CPU serial (fallback): {}", selectedCpuSerial);
             } catch (Exception e) {
                 AE2CraftingLens.LOGGER.debug("Error getting selected CPU serial: {}", e.getMessage());
+            }
+            
+            if (selectedCpuSerial == -1) {
+                return positions;
             }
             
             Field cpuListField = menu.getClass().getDeclaredField("cpuList");
@@ -150,9 +201,7 @@ public class PatternProviderRequestHandler {
                 return positions;
             }
             
-            int cpuCount = 0;
             for (Object cpu : cpus) {
-                cpuCount++;
                 int cpuSerial = -1;
                 try {
                     Method serialMethod = cpu.getClass().getMethod("serial");
@@ -161,34 +210,13 @@ public class PatternProviderRequestHandler {
                     AE2CraftingLens.LOGGER.debug("Error getting CPU serial: {}", e.getMessage());
                 }
                 
-                boolean isSelectedCpu = (selectedCpuSerial != -1 && cpuSerial == selectedCpuSerial);
-                AE2CraftingLens.LOGGER.info("CPU {}: serial={}, selected={}", cpuCount, cpuSerial, isSelectedCpu);
-                
-                Object cluster = null;
-                try {
-                    Field clusterField = cpu.getClass().getDeclaredField("cluster");
-                    clusterField.setAccessible(true);
-                    cluster = clusterField.get(cpu);
-                    AE2CraftingLens.LOGGER.info("Got cluster field for CPU {}: {}", cpuCount, cluster);
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.debug("Error getting cluster field: {}", e.getMessage());
+                if (cpuSerial == selectedCpuSerial) {
+                    AE2CraftingLens.LOGGER.info("Found matching CPU by serial: {}", cpuSerial);
+                    break;
                 }
-                
-                if (cluster == null) {
-                    cluster = cpu;
-                }
-                
-                Set<BlockPos> clusterProviders = findProvidersFromClusterForTarget(cluster, craftingService, targetKey, isSelectedCpu);
-                
-                if (isSelectedCpu && !clusterProviders.isEmpty()) {
-                    AE2CraftingLens.LOGGER.info("Found providers for selected CPU: {}", clusterProviders.size());
-                    return clusterProviders;
-                }
-                
-                positions.addAll(clusterProviders);
             }
             
-            AE2CraftingLens.LOGGER.info("Processed {} CPUs from cpuList", cpuCount);
+            AE2CraftingLens.LOGGER.info("Processed CPUs from cpuList but selected CPU was null");
             
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error finding providers from current crafting job: {}", e.getMessage());
