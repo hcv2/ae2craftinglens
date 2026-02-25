@@ -161,12 +161,21 @@ public class PatternProviderRequestHandler {
             return obj;
         }
         
+        if (depth == 0) {
+            AE2CraftingLens.LOGGER.info("Starting deep scan from: {}", className);
+        }
+        
         for (Field field : obj.getClass().getDeclaredFields()) {
             field.setAccessible(true);
             try {
                 Object fieldValue = field.get(obj);
                 if (fieldValue != null) {
-                    if (fieldValue.getClass().getName().contains("CraftingCPUCluster")) {
+                    String fieldClassName = fieldValue.getClass().getName();
+                    if (depth < 2) {
+                        AE2CraftingLens.LOGGER.info("Field '{}' = {} at depth {}", field.getName(), fieldClassName, depth);
+                    }
+                    
+                    if (fieldClassName.contains("CraftingCPUCluster")) {
                         AE2CraftingLens.LOGGER.info("Found CraftingCPUCluster in field '{}' at depth {}", field.getName(), depth);
                         return fieldValue;
                     }
@@ -212,16 +221,24 @@ public class PatternProviderRequestHandler {
             Set<Object> relevantPatterns = new HashSet<>();
             
             Object craftingLogic = null;
-            try {
-                Field craftingLogicField = cluster.getClass().getField("craftingLogic");
-                craftingLogic = craftingLogicField.get(cluster);
-                AE2CraftingLens.LOGGER.info("Found craftingLogic field: {}", craftingLogic);
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error getting craftingLogic field: {}", e.getMessage());
+            
+            String[] logicFieldNames = {"logic", "craftingLogic", "f_legacy_logic_"};
+            for (String fieldName : logicFieldNames) {
                 try {
-                    craftingLogic = findFieldByTypeName(cluster, "CraftingCpuLogic");
-                } catch (Exception e2) {
-                    AE2CraftingLens.LOGGER.debug("Error finding CraftingCpuLogic: {}", e2.getMessage());
+                    Field craftingLogicField = cluster.getClass().getDeclaredField(fieldName);
+                    craftingLogicField.setAccessible(true);
+                    craftingLogic = craftingLogicField.get(cluster);
+                    AE2CraftingLens.LOGGER.info("Found craftingLogic field '{}': {}", fieldName, craftingLogic);
+                    break;
+                } catch (Exception e) {
+                    // Try next field name
+                }
+            }
+            
+            if (craftingLogic == null) {
+                craftingLogic = findFieldByTypeName(cluster, "CraftingCpuLogic");
+                if (craftingLogic == null) {
+                    craftingLogic = findFieldByTypeName(cluster, "CraftingLogic");
                 }
             }
             
