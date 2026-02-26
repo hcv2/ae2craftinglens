@@ -104,10 +104,18 @@ public class PatternProviderHighlightRenderer {
     }
     
     private static void renderHighlight(PoseStack poseStack, VertexConsumer consumer, BlockPos pos, float remainingSeconds) {
-        float alpha = Math.min(1.0f, remainingSeconds / 2.0f);
-        float pulse = (float) (0.5 + 0.5 * Math.sin(System.currentTimeMillis() / 200.0));
-        float r = 0.2f + 0.3f * pulse;
-        float g = 0.8f;
+        long time = System.currentTimeMillis();
+        
+        float blinkFrequency = 300.0f;
+        float blink = (float) Math.sin(time * Math.PI * 2 / blinkFrequency);
+        float blinkAlpha = blink > 0 ? 1.0f : 0.3f;
+        
+        float fadeAlpha = Math.min(1.0f, remainingSeconds / 2.0f);
+        float alpha = blinkAlpha * fadeAlpha;
+        
+        float colorPulse = (float) (0.5 + 0.5 * Math.sin(time / 150.0));
+        float r = 0.0f + 0.5f * colorPulse;
+        float g = 0.8f + 0.2f * colorPulse;
         float b = 1.0f;
         
         AABB box = new AABB(pos).inflate(0.002);
