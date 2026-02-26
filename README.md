@@ -1,83 +1,93 @@
-
 # AE2 Crafting Lens
-本项目均为ai构建
-## 项目介绍 | Project Introduction
 
-AE2 Crafting Lens 是一个 Minecraft 模组，为 Applied Energistics 2 (AE2) 添加了实用的合成追踪功能。当您在无线终端中查看合成状态时，该模组可以高亮显示正在执行合成任务的样板供应器，并提供详细的位置信息。
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green.svg)](https://www.minecraft.net/)
+[![NeoForge](https://img.shields.io/badge/NeoForge-21.1.x-orange.svg)](https://neoforged.net/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-AE2 Crafting Lens is a Minecraft mod that adds useful crafting tracking functionality to Applied Energistics 2 (AE2). When viewing crafting status in your wireless terminal, this mod highlights pattern providers that are executing crafting tasks and provides detailed location information.
+本项目均为AI构建
+
+## 项目介绍 | Introduction
+
+这个模组为 **Applied Energistics 2 (AE2)** 添加了**样板供应器高亮定位**功能，帮助玩家快速找到正在使用的样板供应器。
+
+This mod adds **Pattern Provider Highlighting** functionality to **Applied Energistics 2 (AE2)**, helping players quickly locate the pattern providers being used.
 
 ## 功能特性 | Features
 
-- **世界渲染高亮**：在游戏世界中为正在工作的样板供应器渲染12秒的高亮边框
-- **详细信息显示**：在聊天栏中显示供应器的维度、精确坐标和与玩家的距离
-- **一键传送**：点击聊天栏中的维度或坐标文本可直接传送到供应器位置
-- **无线终端兼容**：完全兼容 AE2 无线终端和相关模组
-- **简单操作**：在合成状态页面中直接点击物品即可触发高亮功能
+### 核心功能 | Core Features
 
-- **World Rendering Highlight**：Renders 12-second glowing borders around active pattern providers in the game world
-- **Detailed Information**：Displays provider dimension, exact coordinates, and distance from player in chat
-- **One-Click Teleport**：Click on dimension or coordinate text in chat to teleport directly to the provider
-- **Wireless Terminal Compatibility**：Fully compatible with AE2 wireless terminals and related mods
-- **Simple Operation**：Trigger highlighting by directly clicking on items in the crafting status page
-  
+- **一键定位**：在ME合成状态界面点击任意物品，自动高亮显示对应的样板供应器
+- **闪烁高亮**：青蓝色边框闪烁效果，持续12秒，清晰可见
+- **坐标提示**：聊天栏显示位置坐标和距离，支持点击传送
+- **多维度支持**：跨维度后仍可查看高亮信息
+
+### 支持的模组 | Supported Mods
+
+| 模组 | 支持的方块 |
+|------|-----------|
+| **AE2 (原版)** | ME样板供应器 (方块/部件) |
+| **ExtendedAE** | ME扩展样板供应器 |
+| **AdvancedAE** | ME高级样板供应器、ME高级扩展样板供应器 |
+
+### 技术特点 | Technical Features
+
+- ✅ **多人支持**：每个玩家只能看到自己的高亮，互不干扰
+- ✅ **局域网兼容**：支持单人游戏和对局域网开放
+- ✅ **服务器兼容**：支持专用服务器环境
+- ✅ **性能优化**：使用反射缓存和高效渲染
+
 ## 使用方法 | Usage
 
-1. **打开无线终端**：使用 AE2 无线终端或普通终端
-2. **进入合成状态页面**：点击终端界面右上角的合成状态按钮
-3. **查看合成任务**：在合成状态页面中找到正在执行的合成任务
-4. **点击物品**：直接点击计划合成列表中的物品
-5. **查看效果**：
-   - 相关的样板供应器会在世界中高亮显示12秒
-   - 聊天栏会显示供应器的详细信息
-   - 点击聊天栏中的维度或坐标可直接传送
+1. 打开 **ME合成状态** 界面
+2. **点击**任意正在合成的物品
+3. 对应的样板供应器会**闪烁高亮**显示
+4. 聊天栏显示位置信息，**点击可传送**
 
-1. **Open Wireless Terminal**：Use AE2 wireless terminal or regular terminal
-2. **Enter Crafting Status Page**：Click the crafting status button in the top right corner of the terminal interface
-3. **View Crafting Tasks**：Find active crafting tasks in the crafting status page
-4. **Click Item**：Directly click on items in the planned crafting list
-5. **View Results**：
-   - Related pattern providers will be highlighted in the world for 12 seconds
-   - Detailed provider information will be displayed in chat
-   - Click on dimension or coordinate text in chat to teleport directly
+## 依赖 | Dependencies
 
-## 依赖项 | Dependencies
+| 依赖 | 版本 |
+|------|------|
+| Minecraft | 1.21.1 |
+| NeoForge | 21.1.x |
+| Applied Energistics 2 | 19.0.0+ |
 
-- **Minecraft**：1.21.1
-- **NeoForge**：20.0.0 或更高版本
-- **Applied Energistics 2**：19.2.17 或更高版本
+## 构建模组 | Build
 
-- **Minecraft**：1.21.1
-- **NeoForge**：20.0.0 or higher
-- **Applied Energistics 2**：19.2.17 or higher
+```bash
+# Windows
+.\gradlew.bat build
+
+# Linux/macOS
+./gradlew build
+```
+
+构建产物位于 `build/libs/` 目录。
+
+## 开发环境 | Development
+
+```bash
+# Windows
+.\gradlew.bat runClient   # 运行客户端
+.\gradlew.bat runServer   # 运行服务器
+
+# Linux/macOS
+./gradlew runClient
+./gradlew runServer
+```
 
 ## 许可证 | License
 
-本项目使用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+本项目使用 **MIT** 许可证。详见 [LICENSE](LICENSE) 文件。
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
-## 开发 | Development
+## 致谢 | Credits
 
-### 构建模组 | Build the Mod
+- [Applied Energistics 2](https://github.com/AppliedEnergistics/Applied-Energistics-2) - AE2团队
+- [ExtendedAE](https://github.com/GlodBlock/ExtendedAE) - 高亮渲染参考
+- [NeoForge](https://neoforged.net/) - 模组加载器
 
-```bash
-# 构建模组
-./gradlew build
-
-# 运行开发环境
-./gradlew runClient
-```
-
-```bash
-# Build the mod
-./gradlew build
-
-# Run development environment
-./gradlew runClient
-```
-
-### 贡献 | Contributing
+## 贡献 | Contributing
 
 欢迎提交 Issue 和 Pull Request 来帮助改进这个模组！
 
