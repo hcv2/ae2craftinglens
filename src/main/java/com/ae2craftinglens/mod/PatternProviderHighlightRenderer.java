@@ -104,17 +104,13 @@ public class PatternProviderHighlightRenderer {
     }
     
     private static void renderHighlight(PoseStack poseStack, VertexConsumer consumer, BlockPos pos, float remainingSeconds) {
-        long time = System.currentTimeMillis();
-        
-        float blinkInterval = 500.0f;
-        boolean visible = ((int)(time / blinkInterval)) % 2 == 0;
-        
-        if (!visible) {
+        if (!shouldBlink()) {
             return;
         }
         
         float fadeAlpha = Math.min(1.0f, remainingSeconds / 2.0f);
         
+        long time = System.currentTimeMillis();
         float colorPulse = (float) (0.5 + 0.5 * Math.sin(time / 150.0));
         float r = 0.0f + 0.5f * colorPulse;
         float g = 0.8f + 0.2f * colorPulse;
@@ -129,6 +125,10 @@ public class PatternProviderHighlightRenderer {
         renderBox(poseStack, consumer, boxOffset1, r, g, b, fadeAlpha * 0.8f);
         AABB boxOffset2 = box.inflate(-offset);
         renderBox(poseStack, consumer, boxOffset2, r, g, b, fadeAlpha * 0.8f);
+    }
+    
+    private static boolean shouldBlink() {
+        return ((System.currentTimeMillis() / 500) & 1) != 0;
     }
     
     private static void renderBox(PoseStack poseStack, VertexConsumer consumer, AABB box, float r, float g, float b, float a) {
