@@ -46,14 +46,9 @@ authors="hcv2"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-AE2 Crafting Lens - Real-time crafting tracker for Applied Energistics 2.
+AE2 Crafting Lens 
 
-When viewing active crafting tasks in your wireless terminal, this mod displays which machines are processing the job and highlights their locations in the world.
-
-Features:
-- Wireless Terminal Integration: View machine status directly in the interface
-- Real-time Highlighting: Mark machines executing crafting tasks
-- Quick Locate: Click to highlight target machines in the world
+This mod adds **Pattern Provider Highlighting** functionality to Applied Energistics 2 (AE2), helping players quickly locate the pattern providers being used.
 
 Dependencies: Applied Energistics 2
 '''
