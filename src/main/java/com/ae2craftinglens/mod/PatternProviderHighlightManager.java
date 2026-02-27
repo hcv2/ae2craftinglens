@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,15 +26,26 @@ public class PatternProviderHighlightManager {
     
     public void addHighlightedProvider(UUID playerId, Level level, BlockPos pos) {
         if (playerId == null || level == null || pos == null) return;
+        addHighlightedProvider(playerId, level.dimension(), pos);
+    }
+
+    public void addHighlightedProvider(UUID playerId, ResourceKey<Level> dimension, BlockPos pos) {
+        if (playerId == null || dimension == null || pos == null) return;
         
         List<HighlightedProvider> playerList = playerHighlights.computeIfAbsent(playerId, k -> new ArrayList<>());
-        playerList.removeIf(hp -> hp.matches(level, pos));
-        playerList.add(new HighlightedProvider(playerId, level, pos, System.currentTimeMillis() + HIGHLIGHT_DURATION_MS));
+        playerList.removeIf(hp -> hp.matches(dimension, pos));
+        playerList.add(new HighlightedProvider(playerId, dimension, pos, System.currentTimeMillis() + HIGHLIGHT_DURATION_MS));
     }
     
     public void addHighlightedProviders(UUID playerId, Level level, List<BlockPos> positions) {
         for (BlockPos pos : positions) {
             addHighlightedProvider(playerId, level, pos);
+        }
+    }
+
+    public void addHighlightedProviders(UUID playerId, ResourceKey<Level> dimension, Set<BlockPos> positions) {
+        for (BlockPos pos : positions) {
+            addHighlightedProvider(playerId, dimension, pos);
         }
     }
     
@@ -105,11 +117,15 @@ public class PatternProviderHighlightManager {
         private final BlockPos pos;
         private final long expireTime;
         
-        public HighlightedProvider(UUID playerId, Level level, BlockPos pos, long expireTime) {
+        public HighlightedProvider(UUID playerId, ResourceKey<Level> dimension, BlockPos pos, long expireTime) {
             this.playerId = playerId;
-            this.dimension = level.dimension();
+            this.dimension = dimension;
             this.pos = pos;
             this.expireTime = expireTime;
+        }
+        
+        public HighlightedProvider(UUID playerId, Level level, BlockPos pos, long expireTime) {
+            this(playerId, level.dimension(), pos, expireTime);
         }
         
         public UUID getPlayerId() {
@@ -130,6 +146,10 @@ public class PatternProviderHighlightManager {
         
         public boolean matches(Level level, BlockPos pos) {
             return this.dimension.equals(level.dimension()) && this.pos.equals(pos);
+        }
+
+        public boolean matches(ResourceKey<Level> dimension, BlockPos pos) {
+            return this.dimension.equals(dimension) && this.pos.equals(pos);
         }
         
         public float getRemainingSeconds() {

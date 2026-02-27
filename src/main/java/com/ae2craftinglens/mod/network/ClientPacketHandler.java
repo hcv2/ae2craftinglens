@@ -1,5 +1,8 @@
 package com.ae2craftinglens.mod.network;
 
+import java.util.Map;
+import java.util.Set;
+
 import com.ae2craftinglens.mod.AE2CraftingLens;
 import com.ae2craftinglens.mod.PatternProviderHighlightManager;
 
@@ -11,6 +14,7 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -26,7 +30,7 @@ public class ClientPacketHandler {
         
         context.enqueueWork(() -> {
             try {
-                AE2CraftingLens.LOGGER.info("Processing response packet with {} positions", packet.positions().size());
+                AE2CraftingLens.LOGGER.info("Processing response packet with {} dimensions", packet.positions().size());
                 
                 Minecraft mc = Minecraft.getInstance();
                 var player = mc.player;
@@ -48,15 +52,16 @@ public class ClientPacketHandler {
                     return;
                 }
                 
-                for (BlockPos pos : packet.positions()) {
-                    manager.addHighlightedProvider(player.getUUID(), level, pos);
-                }
-                
-                displayMessage(player, "message.ae2craftinglens.highlighted_providers", packet.positions().size(), true);
+                int totalCount = packet.positions().values().stream().mapToInt(Set::size).sum();
+                displayMessage(player, "message.ae2craftinglens.highlighted_providers", totalCount, true);
                 
                 int index = 1;
-                for (BlockPos pos : packet.positions()) {
-                    displayProviderInfo(player, level, pos, index++);
+                for (Map.Entry<ResourceKey<Level>, Set<BlockPos>> entry : packet.positions().entrySet()) {
+                    ResourceKey<Level> dimension = entry.getKey();
+                    for (BlockPos pos : entry.getValue()) {
+                        manager.addHighlightedProvider(player.getUUID(), dimension, pos);
+                        displayProviderInfo(player, dimension, pos, index++);
+                    }
                 }
                 
             } catch (Exception e) {
@@ -77,11 +82,19 @@ public class ClientPacketHandler {
     }
     
     @SuppressWarnings("null")
-    private static void displayProviderInfo(net.minecraft.world.entity.player.Player player, Level level, BlockPos pos, int index) {
+    private static void displayProviderInfo(net.minecraft.world.entity.player.Player player, ResourceKey<Level> dimension, BlockPos pos, int index) {
         try {
-            String dimensionStr = level.dimension().location().toString();
+            String dimensionStr = dimension.location().toString();
             
-            double distance = Math.sqrt(player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5));
+            Component distanceComponent;
+            if (player.level().dimension().equals(dimension)) {
+                double distance = Math.sqrt(player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5));
+                distanceComponent = Component.literal(String.format("%.1f blocks", distance))
+                        .withStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFFFF00)));
+            } else {
+                distanceComponent = Component.literal("Different Dimension")
+                        .withStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFF0000)));
+            }
             
             MutableComponent baseMessage = Component.literal("Provider " + index + ": ");
             
@@ -96,11 +109,8 @@ public class ClientPacketHandler {
                     .withStyle(Style.EMPTY
                             .withColor(TextColor.fromRgb(0x00FF00))
                             .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, 
-                                    "/tp " + pos.getX() + " " + pos.getY() + " " + pos.getZ()))
+                                    "/execute in " + dimensionStr + " run tp " + pos.getX() + " " + pos.getY() + " " + pos.getZ()))
                             .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal("Click to teleport to this position"))));
-            
-            Component distanceComponent = Component.literal(String.format("%.1f blocks", distance))
-                    .withStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFFFF00)));
             
             MutableComponent message = baseMessage
                     .append(dimComponent)

@@ -3,16 +3,23 @@ package com.ae2craftinglens.mod.network;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import com.ae2craftinglens.mod.AE2CraftingLens;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public class PatternProviderRequestHandler {
+
+    private record ProviderLocation(ResourceKey<Level> dimension, BlockPos pos) {}
+
 
     public static void handle(RequestPatternProvidersPacket packet, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)) {
@@ -65,19 +72,24 @@ public class PatternProviderRequestHandler {
                 return;
             }
             
-            Set<BlockPos> providerPositions = new HashSet<>();
+            Set<ProviderLocation> providerLocations = new HashSet<>();
 
             if (containerClassName.contains("CraftingStatusMenu")) {
-                providerPositions = findProvidersFromCurrentCraftingJob(grid, player.containerMenu, craftingService, targetKey, rowIndex);
+                providerLocations = findProvidersFromCurrentCraftingJob(grid, player.containerMenu, craftingService, targetKey, rowIndex, player.level());
             }
 
-            if (providerPositions.isEmpty()) {
-                providerPositions = targetKey == null ?
-                    findAllActivePatternProviders(grid, player.containerMenu) :
-                    findPatternProvidersForKey(grid, targetKey);
+            if (providerLocations.isEmpty()) {
+                providerLocations = targetKey == null ?
+                    findAllActivePatternProviders(grid, player.containerMenu, player.level()) :
+                    findPatternProvidersForKey(grid, targetKey, player.level());
             }
             
-            PatternProviderResponsePacket response = new PatternProviderResponsePacket(providerPositions);
+            Map<ResourceKey<Level>, Set<BlockPos>> positionsMap = new HashMap<>();
+            for (ProviderLocation loc : providerLocations) {
+                positionsMap.computeIfAbsent(loc.dimension(), k -> new HashSet<>()).add(loc.pos());
+            }
+            
+            PatternProviderResponsePacket response = new PatternProviderResponsePacket(positionsMap);
             context.reply(response);
             
         } catch (Exception e) {
@@ -85,8 +97,8 @@ public class PatternProviderRequestHandler {
         }
     }
     
-    private static Set<BlockPos> findProvidersFromCurrentCraftingJob(Object grid, Object menu, Object craftingService, Object targetKey, int rowIndex) {
-        Set<BlockPos> positions = new HashSet<>();
+    private static Set<ProviderLocation> findProvidersFromCurrentCraftingJob(Object grid, Object menu, Object craftingService, Object targetKey, int rowIndex, Level defaultLevel) {
+        Set<ProviderLocation> positions = new HashSet<>();
 
         try {
             int selectedCpuSerial = -1;
@@ -148,7 +160,8 @@ public class PatternProviderRequestHandler {
                             for (Object provider : providers) {
                                 BlockPos pos = getProviderPosition(provider);
                                 if (pos != null) {
-                                    positions.add(pos);
+                                    Level level = getProviderLevel(provider, defaultLevel);
+                                    positions.add(new ProviderLocation(level.dimension(), pos));
                                 }
                             }
                         }
@@ -160,7 +173,7 @@ public class PatternProviderRequestHandler {
                 Object cluster = findClusterFromGrid(grid, selectedCpuSerial);
                 
                 if (cluster != null) {
-                    Set<BlockPos> clusterProviders = findProvidersFromClusterForTarget(cluster, craftingService, targetKey, true);
+                    Set<ProviderLocation> clusterProviders = findProvidersFromClusterForTarget(cluster, craftingService, targetKey, true, defaultLevel);
                     
                     if (!clusterProviders.isEmpty()) {
                         return clusterProviders;
@@ -170,7 +183,7 @@ public class PatternProviderRequestHandler {
                 Object cluster2 = deepFindCraftingCPUCluster(menu);
                 
                 if (cluster2 != null) {
-                    Set<BlockPos> clusterProviders = findProvidersFromClusterForTarget(cluster2, craftingService, targetKey, true);
+                    Set<ProviderLocation> clusterProviders = findProvidersFromClusterForTarget(cluster2, craftingService, targetKey, true, defaultLevel);
                     
                     if (!clusterProviders.isEmpty()) {
                         return clusterProviders;
@@ -327,8 +340,8 @@ public class PatternProviderRequestHandler {
         return null;
     }
     
-    private static Set<BlockPos> findProvidersFromClusterForTarget(Object cluster, Object craftingService, Object targetKey, boolean isSelectedCpu) {
-        Set<BlockPos> positions = new HashSet<>();
+    private static Set<ProviderLocation> findProvidersFromClusterForTarget(Object cluster, Object craftingService, Object targetKey, boolean isSelectedCpu, Level defaultLevel) {
+        Set<ProviderLocation> positions = new HashSet<>();
         
         try {
             Set<Object> relevantPatterns = new HashSet<>();
@@ -419,7 +432,8 @@ public class PatternProviderRequestHandler {
                         for (Object provider : providers) {
                             BlockPos pos = getProviderPosition(provider);
                             if (pos != null) {
-                                positions.add(pos);
+                                Level level = getProviderLevel(provider, defaultLevel);
+                                positions.add(new ProviderLocation(level.dimension(), pos));
                             }
                         }
                     }
@@ -483,8 +497,8 @@ public class PatternProviderRequestHandler {
         return false;
     }
     
-    private static Set<BlockPos> findPatternProvidersForKey(Object grid, Object targetKey) {
-        Set<BlockPos> positions = new HashSet<>();
+    private static Set<ProviderLocation> findPatternProvidersForKey(Object grid, Object targetKey, Level defaultLevel) {
+        Set<ProviderLocation> positions = new HashSet<>();
         
         try {
             Object craftingService = invokeMethod(grid, "getCraftingService", Object.class);
@@ -511,7 +525,8 @@ public class PatternProviderRequestHandler {
                         for (Object provider : providers) {
                             BlockPos pos = getProviderPosition(provider);
                             if (pos != null) {
-                                positions.add(pos);
+                                Level level = getProviderLevel(provider, defaultLevel);
+                                positions.add(new ProviderLocation(level.dimension(), pos));
                             }
                         }
                     }
@@ -527,8 +542,8 @@ public class PatternProviderRequestHandler {
         return positions;
     }
     
-    private static Set<BlockPos> findAllActivePatternProviders(Object grid, Object menu) {
-        Set<BlockPos> positions = new HashSet<>();
+    private static Set<ProviderLocation> findAllActivePatternProviders(Object grid, Object menu, Level defaultLevel) {
+        Set<ProviderLocation> positions = new HashSet<>();
         
         try {
             Object craftingService = invokeMethod(grid, "getCraftingService", Object.class);
@@ -555,7 +570,8 @@ public class PatternProviderRequestHandler {
                                     for (Object provider : providers) {
                                         BlockPos pos = getProviderPosition(provider);
                                         if (pos != null) {
-                                            positions.add(pos);
+                                            Level level = getProviderLevel(provider, defaultLevel);
+                                            positions.add(new ProviderLocation(level.dimension(), pos));
                                         }
                                     }
                                 }
@@ -858,5 +874,46 @@ public class PatternProviderRequestHandler {
             // ignore
         }
         return null;
+    }
+
+    private static Level getProviderLevel(Object provider, Level defaultLevel) {
+        if (provider == null) return defaultLevel;
+
+        try {
+            Level level = invokeMethod(provider, "getLevel", Level.class);
+            if (level != null) return level;
+
+            level = invokeMethod(provider, "level", Level.class);
+            if (level != null) return level;
+
+            Object blockEntity = invokeMethod(provider, "getBlockEntity", Object.class);
+            if (blockEntity != null) {
+                level = invokeMethod(blockEntity, "getLevel", Level.class);
+                if (level != null) return level;
+            }
+
+            Object host = invokeMethod(provider, "getHost", Object.class);
+            if (host != null && host != provider) {
+                return getProviderLevel(host, defaultLevel);
+            }
+
+            for (Field field : provider.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                if (field.getType().isAssignableFrom(Level.class)) {
+                    Object val = field.get(provider);
+                    if (val != null) return (Level) val;
+                }
+                if (field.getName().equals("host")) {
+                    Object val = field.get(provider);
+                    if (val != null && val != provider) {
+                         Level l = getProviderLevel(val, null); 
+                         if (l != null) return l;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return defaultLevel;
     }
 }
