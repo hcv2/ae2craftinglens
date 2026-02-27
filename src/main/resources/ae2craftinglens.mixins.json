@@ -1,0 +1,9 @@
+{
+  "required": true,
+  "package": "com.ae2craftinglens.mod.mixins",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "ae2craftinglens.mixins.refmap.json",
+  "mixins": [],
+  "client": [],
+  "minVersion": "0.8"
+}

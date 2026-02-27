@@ -1,0 +1,7 @@
+{
+  "message.ae2craftinglens.no_providers_found": "§cNo Pattern Providers found",
+  "message.ae2craftinglens.highlighted_providers": "§aHighlighted %d Pattern Provider(s)",
+  "message.ae2craftinglens.provider_info": "§bProvider %d: %s at %s (%.1f blocks away)",
+  "key.ae2craftinglens.category": "AE2 Crafting Lens",
+  "key.ae2craftinglens.toggle_highlight": "Toggle Highlight"
+}

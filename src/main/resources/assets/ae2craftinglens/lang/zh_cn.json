@@ -1,0 +1,7 @@
+{
+  "message.ae2craftinglens.no_providers_found": "§c未找到 Pattern Provider",
+  "message.ae2craftinglens.highlighted_providers": "§a高亮了 %d 个 Pattern Provider",
+  "message.ae2craftinglens.provider_info": "§bProvider %d: %s 在 %s (%.1f 方块距离)",
+  "key.ae2craftinglens.category": "AE2 Crafting Lens",
+  "key.ae2craftinglens.toggle_highlight": "切换高亮"
+}
