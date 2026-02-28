@@ -118,17 +118,68 @@ public class PatternProviderRequestHandler {
         Set<ProviderLocation> positions = new HashSet<>();
 
         try {
+            AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: rowIndex={}, targetKey={}", rowIndex, targetKey);
+            
             int selectedCpuSerial = -1;
             try {
                 Method getSelectedCpuSerialMethod = menu.getClass().getMethod("getSelectedCpuSerial");
                 selectedCpuSerial = (int) getSelectedCpuSerialMethod.invoke(menu);
+                AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: selectedCpuSerial={}", selectedCpuSerial);
             } catch (Exception e) {
-                // ignore
+                AE2CraftingLens.LOGGER.debug("Failed to get selectedCpuSerial: {}", e.getMessage());
             }
 
             Set<Object> relevantPatterns = new HashSet<>();
+            
+            Object targetCluster = null;
+            
+            // Try to find CPU-related fields by scanning all declared fields
+            AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Scanning menu fields for CPU...");
+            for (java.lang.reflect.Field field : menu.getClass().getDeclaredFields()) {
+                String fieldName = field.getName();
+                field.setAccessible(true);
+                try {
+                    Object fieldValue = field.get(menu);
+                    if (fieldValue != null) {
+                        String fieldTypeName = fieldValue.getClass().getName();
+                        
+                        // Check if this field looks like a CPU or cluster
+                        if (fieldTypeName.contains("CraftingCPU") || fieldTypeName.contains("CPU") || 
+                            fieldName.contains("cpu") || fieldName.contains("Cpu") || fieldName.contains("selectedCpu")) {
+                            AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Found CPU-related field '{}' type: {}", fieldName, fieldTypeName);
+                            
+                            // Try to get cluster from this field
+                            try {
+                                Method getClusterMethod = fieldValue.getClass().getMethod("getCluster");
+                                targetCluster = getClusterMethod.invoke(fieldValue);
+                                if (targetCluster != null) {
+                                    AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Got cluster from field '{}': {}", fieldName, targetCluster.getClass().getName());
+                                    break;
+                                }
+                            } catch (NoSuchMethodException e) {
+                                AE2CraftingLens.LOGGER.debug("Field '{}' doesn't have getCluster method", fieldName);
+                            } catch (Exception e) {
+                                AE2CraftingLens.LOGGER.debug("Failed to get cluster from field '{}': {}", fieldName, e.getMessage());
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error accessing field '{}': {}", fieldName, e.getMessage());
+                }
+            }
+            
+            if (targetCluster != null) {
+                AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Using targetCluster, rowIndex={}", rowIndex);
+                Set<ProviderLocation> clusterProviders = findProvidersFromClusterForTarget(targetCluster, craftingService, targetKey, true, defaultLevel, rowIndex);
+                if (!clusterProviders.isEmpty()) {
+                    AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Found {} providers from targetCluster", clusterProviders.size());
+                    return clusterProviders;
+                }
+            } else {
+                AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: targetCluster is null after scanning all fields");
+            }
 
-            try {
+        try {
                 Method getJobsMethod = craftingService.getClass().getMethod("getJobs");
                 Object jobsResult = getJobsMethod.invoke(craftingService);
 
@@ -190,7 +241,7 @@ public class PatternProviderRequestHandler {
                 Object cluster = findClusterFromGrid(grid, selectedCpuSerial);
                 
                 if (cluster != null) {
-                    Set<ProviderLocation> clusterProviders = findProvidersFromClusterForTarget(cluster, craftingService, targetKey, true, defaultLevel);
+                    Set<ProviderLocation> clusterProviders = findProvidersFromClusterForTarget(cluster, craftingService, targetKey, true, defaultLevel, rowIndex);
                     
                     if (!clusterProviders.isEmpty()) {
                         return clusterProviders;
@@ -200,7 +251,7 @@ public class PatternProviderRequestHandler {
                 Object cluster2 = deepFindCraftingCPUCluster(menu);
                 
                 if (cluster2 != null) {
-                    Set<ProviderLocation> clusterProviders = findProvidersFromClusterForTarget(cluster2, craftingService, targetKey, true, defaultLevel);
+                    Set<ProviderLocation> clusterProviders = findProvidersFromClusterForTarget(cluster2, craftingService, targetKey, true, defaultLevel, rowIndex);
                     
                     if (!clusterProviders.isEmpty()) {
                         return clusterProviders;
@@ -357,7 +408,7 @@ public class PatternProviderRequestHandler {
         return null;
     }
     
-    private static Set<ProviderLocation> findProvidersFromClusterForTarget(Object cluster, Object craftingService, Object targetKey, boolean isSelectedCpu, Level defaultLevel) {
+    private static Set<ProviderLocation> findProvidersFromClusterForTarget(Object cluster, Object craftingService, Object targetKey, boolean isSelectedCpu, Level defaultLevel, int rowIndex) {
         Set<ProviderLocation> positions = new HashSet<>();
         
         try {
@@ -404,16 +455,53 @@ public class PatternProviderRequestHandler {
                         if (tasks instanceof java.util.Map) {
                             java.util.Map<?, ?> tasksMap = (java.util.Map<?, ?>) tasks;
                             
-                            for (Object pattern : tasksMap.keySet()) {
-                                if (pattern != null) {
-                                    if (!isSelectedCpu || targetKey == null || isPatternOutputsItem(pattern, targetKey)) {
-                                        relevantPatterns.add(pattern);
+                            AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: tasksMap size: {}", tasksMap.size());
+                            
+                            if (targetKey == null && rowIndex >= 0 && rowIndex < tasksMap.size()) {
+                                AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Trying to find pattern at rowIndex {}", rowIndex);
+                                
+                                int currentIndex = 0;
+                                for (java.util.Map.Entry<?, ?> entry : tasksMap.entrySet()) {
+                                    if (currentIndex == rowIndex) {
+                                        Object pattern = entry.getKey();
+                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Found pattern at index {}: {}", rowIndex, pattern.getClass().getName());
+                                        
+                                        try {
+                                            Method getPrimaryOutputMethod = pattern.getClass().getMethod("getPrimaryOutput");
+                                            Object primaryOutput = getPrimaryOutputMethod.invoke(pattern);
+                                            
+                                            if (primaryOutput != null) {
+                                                Class<?> genericStackClass = Class.forName("appeng.api.stacks.GenericStack");
+                                                if (genericStackClass.isInstance(primaryOutput)) {
+                                                    Method whatMethod = genericStackClass.getMethod("what");
+                                                    Object outputKey = whatMethod.invoke(primaryOutput);
+                                                    
+                                                    if (outputKey != null) {
+                                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Pattern at index {} outputs: {}", rowIndex, outputKey);
+                                                        
+                                                        relevantPatterns.add(pattern);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        } catch (Exception e) {
+                                            AE2CraftingLens.LOGGER.debug("Failed to get output from pattern: {}", e.getMessage());
+                                        }
+                                    }
+                                    currentIndex++;
+                                }
+                            } else {
+                                for (Object pattern : tasksMap.keySet()) {
+                                    if (pattern != null) {
+                                        if (!isSelectedCpu || targetKey == null || isPatternOutputsItem(pattern, targetKey)) {
+                                            relevantPatterns.add(pattern);
+                                        }
                                     }
                                 }
                             }
                         }
                     } catch (Exception e) {
-                        // ignore
+                        AE2CraftingLens.LOGGER.error("Error extracting tasks from job", e);
                     }
                 }
             }
@@ -911,6 +999,31 @@ public class PatternProviderRequestHandler {
         String hostClassName = host.getClass().getName();
         AE2CraftingLens.LOGGER.info("extractPositionFromHost: host class is {}", hostClassName);
         
+        // Special handling for Extended AE - scan all BlockPos fields directly
+        if (hostClassName.contains("extendedae") || hostClassName.contains("TileExPattern")) {
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: Extended AE host detected, scanning all BlockPos fields");
+            try {
+                java.lang.reflect.Field[] allFields = host.getClass().getDeclaredFields();
+                for (java.lang.reflect.Field field : allFields) {
+                    if (field.getType() == BlockPos.class) {
+                        try {
+                            field.setAccessible(true);
+                            BlockPos fieldPos = (BlockPos) field.get(host);
+                            if (fieldPos != null && !fieldPos.equals(BlockPos.ZERO)) {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from Extended AE host.{} field: {}", field.getName(), fieldPos);
+                                return fieldPos;
+                            }
+                        } catch (Exception e) {
+                            AE2CraftingLens.LOGGER.debug("Failed to access BlockPos field {} in Extended AE: {}", field.getName(), e.getMessage());
+                        }
+                    }
+                }
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Extended AE BlockPos field scan found nothing");
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Failed to scan Extended AE fields: {}", e.getMessage());
+            }
+        }
+        
         // Log all interfaces of the host
         Class<?>[] interfaces = host.getClass().getInterfaces();
         StringBuilder interfaceNames = new StringBuilder();
@@ -929,7 +1042,15 @@ public class PatternProviderRequestHandler {
                     AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from BlockEntity: {}", pos);
                     return pos;
                 }
-                AE2CraftingLens.LOGGER.warn("extractPositionFromHost: BlockEntity.getBlockPos() returned null");
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: BlockEntity.getBlockPos() returned null, using getBlockPosFromBE() helper");
+                
+                // Use helper method which handles SRG names and field access
+                pos = getBlockPosFromBE(host);
+                if (pos != null) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from BlockEntity via getBlockPosFromBE(): {}", pos);
+                    return pos;
+                }
+                AE2CraftingLens.LOGGER.warn("extractPositionFromHost: getBlockPosFromBE() also returned null for BlockEntity");
             } else {
                 AE2CraftingLens.LOGGER.info("extractPositionFromHost: Host is not BlockEntity");
             }
@@ -1028,20 +1149,329 @@ public class PatternProviderRequestHandler {
             AE2CraftingLens.LOGGER.info("extractPositionFromHost: Failed to get nested host: {}", e.getMessage());
         }
         
-        // Try 7: Check for getGridNode() method and get location from grid node
+        // Try 7: Use IGridNode to extract position (most reliable method for AE2)
         try {
             Object gridNode = invokeMethod(host, "getGridNode", Object.class);
             if (gridNode != null) {
                 AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got gridNode: {}", gridNode.getClass().getName());
-                // Try to get location from grid node
-                Object gridHost = invokeMethod(gridNode, "getGridHost", Object.class);
-                if (gridHost != null) {
-                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got gridHost: {}", gridHost.getClass().getName());
-                    pos = extractPositionFromHost(gridHost); // Recursive call
-                    if (pos != null) {
-                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from gridHost: {}", pos);
-                        return pos;
+                
+                // Method 7a: DIRECT - Try multiple approaches to get position from IGridNode
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Trying to get location from IGridNode directly");
+                
+                // Try 7a-1: Get location through IInWorldGridNode interface (AE2 official API)
+                try {
+                    // Try to call getLocation() - this should exist on IInWorldGridNode
+                    Class<?> iInWorldGridNodeClass = Class.forName("appeng.api.networking.IInWorldGridNode");
+                    if (iInWorldGridNodeClass.isInstance(gridNode)) {
+                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: gridNode implements IInWorldGridNode interface");
+                        
+                        // Try getLocation() method from the interface
+                        try {
+                            Method getLocationMethod = iInWorldGridNodeClass.getMethod("getLocation");
+                            Object location = getLocationMethod.invoke(gridNode);
+                            if (location != null) {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got location from IInWorldGridNode.getLocation(): {}", location.getClass().getName());
+                                
+                                // Try to get BlockPos from location
+                                try {
+                                    Method getPosMethod = location.getClass().getMethod("getPos");
+                                    Object posResult = getPosMethod.invoke(location);
+                                    if (posResult instanceof BlockPos) {
+                                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IInWorldGridNode.getLocation().getPos(): {}", posResult);
+                                        return (BlockPos) posResult;
+                                    }
+                                } catch (Exception e) {
+                                    AE2CraftingLens.LOGGER.debug("Failed to getPos() from location: {}", e.getMessage());
+                                }
+                            } else {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: IInWorldGridNode.getLocation() returned null");
+                            }
+                        } catch (NoSuchMethodException e) {
+                            AE2CraftingLens.LOGGER.debug("IInWorldGridNode.getLocation() method not found: {}", e.getMessage());
+                        }
                     }
+                } catch (ClassNotFoundException e) {
+                    AE2CraftingLens.LOGGER.debug("IInWorldGridNode class not found");
+                }
+                
+                // Try 7a-2: Try getMachine() or getGridHost() methods
+                try {
+                    // Try getMachine() first (AE2 1.20.1 naming)
+                    Object machine = invokeMethod(gridNode, "getMachine", Object.class);
+                    if (machine == null) {
+                        // Try getGridHost() as fallback
+                        machine = invokeMethod(gridNode, "getGridHost", Object.class);
+                    }
+                    
+                    if (machine != null) {
+                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got machine/gridHost from IGridNode: {}", machine.getClass().getName());
+                        
+                        // If machine is a BlockEntity, call getBlockPos()
+                        try {
+                            Class<?> blockEntityClass = Class.forName("net.minecraft.world.level.block.entity.BlockEntity");
+                            if (blockEntityClass.isInstance(machine)) {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Machine is BlockEntity, trying getBlockPos() and SRG fields");
+                                // Use the helper method which handles both getBlockPos() and SRG field access
+                                pos = getBlockPosFromBE(machine);
+                                if (pos != null) {
+                                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.getMachine() via getBlockPosFromBE(): {}", pos);
+                                    return pos;
+                                }
+                                AE2CraftingLens.LOGGER.warn("extractPositionFromHost: getBlockPosFromBE() returned null for machine");
+                            } else {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Machine is not BlockEntity, it is: {}", machine.getClass().getName());
+                            }
+                        } catch (ClassNotFoundException e) {
+                            AE2CraftingLens.LOGGER.debug("BlockEntity class not found");
+                        }
+                    } else {
+                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: IGridNode.getMachine() and getGridHost() both returned null");
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Failed to get machine/gridHost from IGridNode: {}", e.getMessage());
+                }
+                
+                // Try 7a-3: Direct field access on IGridNode - CRITICAL: Try 'location' field first (found in logs)
+                try {
+                    Class<?> gridNodeClass = gridNode.getClass();
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Trying direct field access on IGridNode");
+                    
+                    // CRITICAL: Try 'location' field first (this is BlockPos in InWorldGridNode)
+                    try {
+                        java.lang.reflect.Field locationField = gridNodeClass.getDeclaredField("location");
+                        locationField.setAccessible(true);
+                        Object locationObj = locationField.get(gridNode);
+                        if (locationObj instanceof BlockPos) {
+                            BlockPos locationPos = (BlockPos) locationObj;
+                            if (!locationPos.equals(BlockPos.ZERO)) {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.location field: {}", locationPos);
+                                return locationPos;
+                            } else {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: IGridNode.location is BlockPos.ZERO, skipping");
+                            }
+                        } else {
+                            AE2CraftingLens.LOGGER.info("extractPositionFromHost: IGridNode.location is not BlockPos: {}", locationObj);
+                        }
+                    } catch (NoSuchFieldException e) {
+                        AE2CraftingLens.LOGGER.debug("Field 'location' not found in IGridNode");
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Failed to access 'location' field: {}", e.getMessage());
+                    }
+                    
+                    // Try AE2 common SRG name for location field
+                    try {
+                        java.lang.reflect.Field srgLocationField = gridNodeClass.getDeclaredField("f_65651_");
+                        srgLocationField.setAccessible(true);
+                        Object srgLocationObj = srgLocationField.get(gridNode);
+                        if (srgLocationObj instanceof BlockPos) {
+                            BlockPos srgPos = (BlockPos) srgLocationObj;
+                            if (!srgPos.equals(BlockPos.ZERO)) {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.f_65651_ (SRG) field: {}", srgPos);
+                                return srgPos;
+                            }
+                        }
+                    } catch (NoSuchFieldException e) {
+                        AE2CraftingLens.LOGGER.debug("Field 'f_65651_' not found in IGridNode");
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Failed to access 'f_65651_' field: {}", e.getMessage());
+                    }
+                    
+                    // Try all BlockPos-typed fields in IGridNode
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Scanning all BlockPos fields in IGridNode");
+                    java.lang.reflect.Field[] allFields = gridNodeClass.getDeclaredFields();
+                    for (java.lang.reflect.Field field : allFields) {
+                        if (field.getType() == BlockPos.class) {
+                            try {
+                                field.setAccessible(true);
+                                BlockPos fieldPos = (BlockPos) field.get(gridNode);
+                                if (fieldPos != null && !fieldPos.equals(BlockPos.ZERO)) {
+                                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.{} field: {}", field.getName(), fieldPos);
+                                    return fieldPos;
+                                }
+                            } catch (Exception e) {
+                                AE2CraftingLens.LOGGER.debug("Failed to access BlockPos field {}: {}", field.getName(), e.getMessage());
+                            }
+                        }
+                    }
+                    
+                    // Try common field names for BlockEntity or position
+                    String[] possibleFieldNames = {
+                        "representativeBlockEntity", 
+                        "host", 
+                        "machine",
+                        "gridHost",
+                        "blockEntity",
+                        "pos",
+                        "tileEntity",
+                        "blockEntityRef",
+                        "nodeHost"
+                    };
+                    
+                    for (String fieldName : possibleFieldNames) {
+                        try {
+                            java.lang.reflect.Field field = gridNodeClass.getDeclaredField(fieldName);
+                            field.setAccessible(true);
+                            Object fieldObj = field.get(gridNode);
+                            if (fieldObj != null) {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got field '{}' from IGridNode: {}", fieldName, fieldObj.getClass().getName());
+                                
+                                // Try to get position from this field object
+                                pos = invokeMethod(fieldObj, "getBlockPos", BlockPos.class);
+                                if (pos != null) {
+                                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.{} -> getBlockPos(): {}", fieldName, pos);
+                                    return pos;
+                                }
+                                
+                                // If it's a BlockEntity, try getBlockPosFromBE helper
+                                try {
+                                    Class<?> blockEntityClass = Class.forName("net.minecraft.world.level.block.entity.BlockEntity");
+                                    if (blockEntityClass.isInstance(fieldObj)) {
+                                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: Field object is BlockEntity, using getBlockPosFromBE()");
+                                        pos = getBlockPosFromBE(fieldObj);
+                                        if (pos != null) {
+                                            AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.{} via getBlockPosFromBE(): {}", fieldName, pos);
+                                            return pos;
+                                        }
+                                        AE2CraftingLens.LOGGER.warn("extractPositionFromHost: getBlockPosFromBE() returned null for field {}", fieldName);
+                                    }
+                                } catch (Exception e) {
+                                    AE2CraftingLens.LOGGER.debug("Failed to check if field object is BlockEntity: {}", e.getMessage());
+                                }
+                            }
+                        } catch (NoSuchFieldException e) {
+                            // Field not found, continue
+                        } catch (Exception e) {
+                            AE2CraftingLens.LOGGER.debug("Failed to access field {}: {}", fieldName, e.getMessage());
+                        }
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Failed direct field access on IGridNode: {}", e.getMessage());
+                }
+                
+                // Method 7b: Try through getGridHost().getLocation().getPos()
+                try {
+                    Object gridHost = invokeMethod(gridNode, "getGridHost", Object.class);
+                    if (gridHost != null) {
+                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got gridHost from gridNode: {}", gridHost.getClass().getName());
+                        
+                        // Try IPartHost.getLocation()
+                        try {
+                            Class<?> iPartHostClass = Class.forName("appeng.parts.IPartHost");
+                            if (iPartHostClass.isInstance(gridHost)) {
+                                Object location = invokeMethod(gridHost, "getLocation", Object.class);
+                                if (location != null) {
+                                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got location from IPartHost: {}", location.getClass().getName());
+                                    pos = invokeMethod(location, "getPos", BlockPos.class);
+                                    if (pos != null) {
+                                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode -> IPartHost -> Location -> getPos(): {}", pos);
+                                        return pos;
+                                    }
+                                }
+                            }
+                        } catch (ClassNotFoundException e) {
+                            AE2CraftingLens.LOGGER.info("extractPositionFromHost: IPartHost class not found");
+                        }
+                        
+                        // Try IPatternProviderHost.getLocation()
+                        try {
+                            Class<?> patternProviderHostClass = Class.forName("appeng.helpers.patternprovider.IPatternProviderHost");
+                            if (patternProviderHostClass.isInstance(gridHost)) {
+                                Object location = invokeMethod(gridHost, "getLocation", Object.class);
+                                if (location != null) {
+                                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got location from IPatternProviderHost: {}", location.getClass().getName());
+                                    pos = invokeMethod(location, "getPos", BlockPos.class);
+                                    if (pos != null) {
+                                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode -> IPatternProviderHost -> Location -> getPos(): {}", pos);
+                                        return pos;
+                                    }
+                                }
+                            }
+                        } catch (ClassNotFoundException e) {
+                            AE2CraftingLens.LOGGER.info("extractPositionFromHost: IPatternProviderHost class not found");
+                        }
+                        
+                        // Try recursive extraction from gridHost
+                        pos = extractPositionFromHost(gridHost);
+                        if (pos != null) {
+                            AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from gridHost (recursive): {}", pos);
+                            return pos;
+                        }
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Failed to extract from gridHost: {}", e.getMessage());
+                }
+                
+                // Method 7c: Try direct field access on IGridNode with SRG names
+                try {
+                    Class<?> gridNodeClass = gridNode.getClass();
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Trying direct field access on IGridNode");
+                    
+                    // Try common field names for position in IGridNode implementations
+                    String[] possibleFieldNames = {
+                        "representativeBlockEntity", 
+                        "host", 
+                        "f_58850_",  // SRG name for worldPosition
+                        "blockEntity",
+                        "pos"  // Direct position field
+                    };
+                    
+                    for (String fieldName : possibleFieldNames) {
+                        try {
+                            java.lang.reflect.Field field = gridNodeClass.getDeclaredField(fieldName);
+                            field.setAccessible(true);
+                            Object fieldObj = field.get(gridNode);
+                            if (fieldObj != null) {
+                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got field '{}' from IGridNode: {}", fieldName, fieldObj.getClass().getName());
+                                
+                                // Try to get position from this field object
+                                pos = invokeMethod(fieldObj, "getBlockPos", BlockPos.class);
+                                if (pos != null) {
+                                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.{} -> getBlockPos(): {}", fieldName, pos);
+                                    return pos;
+                                }
+                                
+                                // If it's a BlockEntity, try direct field access too
+                                try {
+                                    Class<?> blockEntityClass = Class.forName("net.minecraft.world.level.block.entity.BlockEntity");
+                                    if (blockEntityClass.isInstance(fieldObj)) {
+                                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: Field object is BlockEntity, trying direct field access");
+                                        
+                                        // Try worldPosition field with SRG name
+                                        try {
+                                            java.lang.reflect.Field worldPosField = blockEntityClass.getDeclaredField("worldPosition");
+                                            worldPosField.setAccessible(true);
+                                            Object posObj = worldPosField.get(fieldObj);
+                                            if (posObj instanceof BlockPos) {
+                                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.{} -> worldPosition field: {}", fieldName, posObj);
+                                                return (BlockPos) posObj;
+                                            }
+                                        } catch (Exception e) {
+                                            AE2CraftingLens.LOGGER.debug("extractPositionFromHost: Failed to access worldPosition field: {}", e.getMessage());
+                                        }
+                                        
+                                        // Try blockPos field
+                                        try {
+                                            java.lang.reflect.Field blockPosField = blockEntityClass.getDeclaredField("blockPos");
+                                            blockPosField.setAccessible(true);
+                                            Object posObj = blockPosField.get(fieldObj);
+                                            if (posObj instanceof BlockPos) {
+                                                AE2CraftingLens.LOGGER.info("extractPositionFromHost: SUCCESS! Got position from IGridNode.{} -> blockPos field: {}", fieldName, posObj);
+                                                return (BlockPos) posObj;
+                                            }
+                                        } catch (Exception e) {
+                                            AE2CraftingLens.LOGGER.debug("extractPositionFromHost: Failed to access blockPos field: {}", e.getMessage());
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    AE2CraftingLens.LOGGER.debug("extractPositionFromHost: Failed to check if field object is BlockEntity: {}", e.getMessage());
+                                }
+                            }
+                        } catch (NoSuchFieldException e) {
+                            AE2CraftingLens.LOGGER.debug("extractPositionFromHost: Field '{}' not found in IGridNode", fieldName);
+                        }
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Failed direct field access on IGridNode: {}", e.getMessage());
                 }
             } else {
                 AE2CraftingLens.LOGGER.info("extractPositionFromHost: getGridNode() returned null");
@@ -1051,6 +1481,46 @@ public class PatternProviderRequestHandler {
         }
         
         AE2CraftingLens.LOGGER.warn("extractPositionFromHost: All methods failed to get position from host: {}", hostClassName);
+        return null;
+    }
+    
+    /**
+     * Extract position from BlockEntity using both standard methods and SRG field names.
+     * This is a fallback when getBlockPos() returns null (common in Extended AE).
+     */
+    private static BlockPos getBlockPosFromBE(Object blockEntity) {
+        if (blockEntity == null) return null;
+        
+        // Try standard getBlockPos() first
+        BlockPos pos = invokeMethod(blockEntity, "getBlockPos", BlockPos.class);
+        if (pos != null) {
+            AE2CraftingLens.LOGGER.debug("getBlockPosFromBE: Got position from getBlockPos(): {}", pos);
+            return pos;
+        }
+        
+        // Fallback: Direct field access with SRG names
+        try {
+            Class<?> beClass = Class.forName("net.minecraft.world.level.block.entity.BlockEntity");
+            
+            // Try SRG name first (f_58850_ is worldPosition in 1.20.1)
+            String[] fieldNames = {"f_58850_", "worldPosition", "blockPos"};
+            for (String fieldName : fieldNames) {
+                try {
+                    java.lang.reflect.Field field = beClass.getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object posObj = field.get(blockEntity);
+                    if (posObj instanceof BlockPos) {
+                        AE2CraftingLens.LOGGER.debug("getBlockPosFromBE: Got position from {} field: {}", fieldName, posObj);
+                        return (BlockPos) posObj;
+                    }
+                } catch (NoSuchFieldException e) {
+                    AE2CraftingLens.LOGGER.debug("getBlockPosFromBE: Field {} not found", fieldName);
+                }
+            }
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("getBlockPosFromBE: Failed to access fields: {}", e.getMessage());
+        }
+        
         return null;
     }
     
