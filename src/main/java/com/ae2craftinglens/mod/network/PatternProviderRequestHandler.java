@@ -378,7 +378,8 @@ public class PatternProviderRequestHandler {
             }
             
             if (craftingLogic == null) {
-                craftingLogic = findFieldByTypeName(cluster, "CraftingCpuLogic");
+                // AE2 1.20.1: Use CraftingLogic instead of CraftingCpuLogic
+                craftingLogic = findFieldByTypeName(cluster, "CraftingLogic");
                 if (craftingLogic == null) {
                     craftingLogic = findFieldByTypeName(cluster, "CraftingLogic");
                 }

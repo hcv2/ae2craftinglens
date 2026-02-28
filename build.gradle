@@ -60,29 +60,30 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
     mavenCentral()
-    // AE2 dependencies should be added by user based on their setup
-    // maven {
-    //     name = "Modmaven"
-    //     url = "https://modmaven.dev/"
-    //     content {
-    //         includeGroup "appeng"
-    //     }
-    // }
-    // maven {
-    //     name = "CurseMaven"
-    //     url = "https://www.cursemaven.com"
-    //     content {
-    //         includeGroup "curse.maven"
-    //     }
-    // }
+    // AE2 dependencies
+    maven {
+        name = "Modmaven"
+        url = "https://modmaven.dev/"
+        content {
+            includeGroup "appeng"
+        }
+    }
+    maven {
+        name = "CurseMaven"
+        url = "https://www.cursemaven.com"
+        content {
+            includeGroup "curse.maven"
+        }
+    }
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     
-    // AE2 dependency - uncomment and configure based on your setup
-    // compileOnly fg.deobf("curse.maven:ae2-223794:FILE_ID")
-    // runtimeOnly fg.deobf("curse.maven:ae2-223794:FILE_ID")
+    // AE2 dependency - compileOnly for compilation, runtimeOnly for testing
+    // 注意：AE2 1.20.1 版本使用 fg.deobf 时需要指定完整版本
+    compileOnly fg.deobf("appeng:appliedenergistics2-forge:${ae2_version}")
+    runtimeOnly fg.deobf("appeng:appliedenergistics2-forge:${ae2_version}")
 }
 
 tasks.named('processResources', ProcessResources).configure {

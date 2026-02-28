@@ -6,6 +6,7 @@ import com.mojang.logging.LogUtils;
 
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
@@ -30,7 +31,7 @@ public class AE2CraftingLens {
 
         NetworkHandler.register();
 
-        FMLJavaModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         
         AE2CraftingLens.LOGGER.info("AE2CraftingLens mod initialized");
     }

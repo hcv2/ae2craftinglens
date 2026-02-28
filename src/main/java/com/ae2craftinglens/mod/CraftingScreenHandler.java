@@ -1,5 +1,7 @@
 package com.ae2craftinglens.mod;
 
+import appeng.api.stacks.AEKey;
+
 import com.ae2craftinglens.mod.network.NetworkHandler;
 import com.ae2craftinglens.mod.network.RequestPatternProvidersPacket;
 
@@ -9,7 +11,7 @@ import net.minecraftforge.client.event.ScreenEvent;
 
 public class CraftingScreenHandler {
 
-    private Object lastClickedAEKey = null;
+    private AEKey lastClickedAEKey = null;
     private int lastClickedRowIndex = -1;
     
     public CraftingScreenHandler() {
@@ -115,7 +117,7 @@ public class CraftingScreenHandler {
             int rowIndex = lastClickedRowIndex;
             lastClickedRowIndex = -1;
 
-            Object aeKey = extractAEKeyFromTable(rowIndex);
+            AEKey aeKey = extractAEKeyFromTable(rowIndex);
 
             if (aeKey == null) {
                 aeKey = extractAEKeyFromSelectedCpu();
@@ -215,7 +217,7 @@ public class CraftingScreenHandler {
         return false;
     }
     
-    private Object extractAEKeyFromSlot(Object slot) {
+    private AEKey extractAEKeyFromSlot(Object slot) {
         try {
             try {
                 java.lang.reflect.Method getStackMethod = slot.getClass().getMethod("getStack");
@@ -225,7 +227,7 @@ public class CraftingScreenHandler {
                     Object aeKey = whatMethod.invoke(stack);
                     if (aeKey != null) {
                         AE2CraftingLens.LOGGER.info("Extracted AEKey from GenericStack: {}", aeKey);
-                        return aeKey;
+                        return (AEKey) aeKey;
                     }
                 }
             } catch (Exception e) {
@@ -237,7 +239,7 @@ public class CraftingScreenHandler {
                 Object aeKey = getAEKeyMethod.invoke(slot);
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("Extracted AEKey via getAEKey method: {}", aeKey);
-                    return aeKey;
+                    return (AEKey) aeKey;
                 }
             } catch (Exception e) {
                 AE2CraftingLens.LOGGER.debug("Error extracting AEKey via getAEKey: {}", e.getMessage());
@@ -249,7 +251,7 @@ public class CraftingScreenHandler {
                 Object aeKey = whatField.get(slot);
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("Extracted AEKey via what field: {}", aeKey);
-                    return aeKey;
+                    return (AEKey) aeKey;
                 }
             } catch (Exception e) {
                 AE2CraftingLens.LOGGER.debug("Error extracting AEKey via what field: {}", e.getMessage());
@@ -260,7 +262,7 @@ public class CraftingScreenHandler {
         return null;
     }
     
-    private Object extractAEKeyFromSelectedCpu() {
+    private AEKey extractAEKeyFromSelectedCpu() {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null) {
@@ -320,7 +322,7 @@ public class CraftingScreenHandler {
                     
                     if (aeKey != null) {
                         AE2CraftingLens.LOGGER.info("Extracted AEKey from selected CPU {}: {}", serial, aeKey);
-                        return aeKey;
+                        return (AEKey) aeKey;
                     } else {
                         AE2CraftingLens.LOGGER.debug("GenericStack.what() returned null");
                         return null;
@@ -337,7 +339,7 @@ public class CraftingScreenHandler {
         }
     }
 
-    private Object extractAEKeyFromTable(int rowIndex) {
+    private AEKey extractAEKeyFromTable(int rowIndex) {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null || mc.player == null) return null;
@@ -370,7 +372,7 @@ public class CraftingScreenHandler {
                                 AE2CraftingLens.LOGGER.info("Table array length: {}", array.length);
                                 if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
                                     AE2CraftingLens.LOGGER.info("Table item at row {}: {}", rowIndex, array[rowIndex].getClass().getName());
-                                    Object key = extractAEKeyFromObject(array[rowIndex], rowIndex);
+                                    AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
                                     if (key != null) return key;
                                 }
                             } else if (table instanceof java.util.List) {
@@ -378,7 +380,7 @@ public class CraftingScreenHandler {
                                 AE2CraftingLens.LOGGER.info("Table list size: {}", list.size());
                                 if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
                                     AE2CraftingLens.LOGGER.info("Table item at row {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
-                                    Object key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
+                                    AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
                                     if (key != null) return key;
                                 }
                             }
@@ -509,7 +511,7 @@ public class CraftingScreenHandler {
                                                             Object item = list.get(rowIndex);
                                                             if (item != null) {
                                                                 AE2CraftingLens.LOGGER.info("    Item at {}: {}", rowIndex, item.getClass().getName());
-                                                                Object key = extractAEKeyFromObject(item, rowIndex);
+                                                                AEKey key = extractAEKeyFromObject(item, rowIndex);
                                                                 if (key != null) return key;
                                                             }
                                                         }
@@ -520,7 +522,7 @@ public class CraftingScreenHandler {
                                                             Object item = arr[rowIndex];
                                                             if (item != null) {
                                                                 AE2CraftingLens.LOGGER.info("    Item at {}: {}", rowIndex, item.getClass().getName());
-                                                                Object key = extractAEKeyFromObject(item, rowIndex);
+                                                                AEKey key = extractAEKeyFromObject(item, rowIndex);
                                                                 if (key != null) return key;
                                                             }
                                                         }
@@ -547,7 +549,7 @@ public class CraftingScreenHandler {
         return null;
     }
 
-    private Object extractAEKeyFromObject(Object obj, int rowIndex) {
+    private AEKey extractAEKeyFromObject(Object obj, int rowIndex) {
         if (obj == null) return null;
 
         try {
@@ -559,7 +561,7 @@ public class CraftingScreenHandler {
                 Object aeKey = whatMethod.invoke(obj);
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("Extracted AEKey via what() at row {}: {}", rowIndex, aeKey);
-                    return aeKey;
+                    return (AEKey) aeKey;
                 }
             } catch (Exception e) {
             }
@@ -569,7 +571,7 @@ public class CraftingScreenHandler {
                 Object aeKey = getKeyMethod.invoke(obj);
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("Extracted AEKey via getKey() at row {}: {}", rowIndex, aeKey);
-                    return aeKey;
+                    return (AEKey) aeKey;
                 }
             } catch (Exception e) {
             }
@@ -580,7 +582,7 @@ public class CraftingScreenHandler {
                 Object aeKey = whatField.get(obj);
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("Extracted AEKey via what field at row {}: {}", rowIndex, aeKey);
-                    return aeKey;
+                    return (AEKey) aeKey;
                 }
             } catch (Exception e) {
             }
@@ -591,7 +593,7 @@ public class CraftingScreenHandler {
                 Object aeKey = keyField.get(obj);
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("Extracted AEKey via key field at row {}: {}", rowIndex, aeKey);
-                    return aeKey;
+                    return (AEKey) aeKey;
                 }
             } catch (Exception e) {
             }
@@ -611,10 +613,10 @@ public class CraftingScreenHandler {
                                 Object aeKey = whatMethod.invoke(val);
                                 if (aeKey != null) {
                                     AE2CraftingLens.LOGGER.info("Extracted AEKey from nested GenericStack at row {}: {}", rowIndex, aeKey);
-                                    return aeKey;
+                                    return (AEKey) aeKey;
                                 }
                             } else {
-                                return val;
+                                return (AEKey) val;
                             }
                         }
                     }
