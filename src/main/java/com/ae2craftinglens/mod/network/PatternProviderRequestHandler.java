@@ -740,20 +740,66 @@ public class PatternProviderRequestHandler {
             String className = provider.getClass().getName();
             return className.contains("appeng") && 
                    (className.contains("PatternProvider") || 
-                    className.contains("patternprovider"));
+                    className.contains("patternprovider") ||
+                    className.contains("PatternProviderLogic"));
         }
         
         @Override
         public BlockPos extractPosition(Object provider) {
-            BlockPos pos = invokeMethod(provider, "getBlockPos", BlockPos.class);
-            if (pos != null) return pos;
+            AE2CraftingLens.LOGGER.info("StandardAE2: Trying to extract position from {}", provider.getClass().getName());
             
-            Object host = getHostFromProvider(provider);
-            if (host != null) {
-                pos = extractPositionFromHost(host);
-                if (pos != null) return pos;
+            // Try direct getBlockPos first
+            BlockPos pos = invokeMethod(provider, "getBlockPos", BlockPos.class);
+            if (pos != null) {
+                AE2CraftingLens.LOGGER.info("StandardAE2: Got position directly: {}", pos);
+                return pos;
             }
             
+            // Check if it's a Part (mounted on cable)
+            try {
+                Class<?> iPartClass = Class.forName("appeng.parts.IPart");
+                if (iPartClass.isInstance(provider)) {
+                    AE2CraftingLens.LOGGER.info("StandardAE2: Provider is IPart, getting host");
+                    Object host = invokeMethod(provider, "getHost", Object.class);
+                    if (host != null) {
+                        pos = extractPositionFromHost(host);
+                        if (pos != null) {
+                            AE2CraftingLens.LOGGER.info("StandardAE2: Got position from IPart host: {}", pos);
+                            return pos;
+                        }
+                    }
+                }
+            } catch (ClassNotFoundException e) {
+                // IPart class not found, continue
+            }
+            
+            // Try to get host from provider
+            Object host = getHostFromProvider(provider);
+            if (host != null) {
+                AE2CraftingLens.LOGGER.info("StandardAE2: Got host, extracting position");
+                pos = extractPositionFromHost(host);
+                if (pos != null) {
+                    AE2CraftingLens.LOGGER.info("StandardAE2: Got position from host: {}", pos);
+                    return pos;
+                }
+            }
+            
+            // Check if provider itself is a BlockEntity
+            try {
+                Class<?> blockEntityClass = Class.forName("net.minecraft.world.level.block.entity.BlockEntity");
+                if (blockEntityClass.isInstance(provider)) {
+                    AE2CraftingLens.LOGGER.info("StandardAE2: Provider is BlockEntity");
+                    pos = invokeMethod(provider, "getBlockPos", BlockPos.class);
+                    if (pos != null) {
+                        AE2CraftingLens.LOGGER.info("StandardAE2: Got position from BlockEntity: {}", pos);
+                        return pos;
+                    }
+                }
+            } catch (ClassNotFoundException e) {
+                // BlockEntity class not found, continue
+            }
+            
+            AE2CraftingLens.LOGGER.warn("StandardAE2: All methods failed to get position");
             return null;
         }
     }
@@ -857,28 +903,154 @@ public class PatternProviderRequestHandler {
     }
     
     private static BlockPos extractPositionFromHost(Object host) {
-        if (host == null) return null;
-        
-        Object blockEntity = invokeMethod(host, "getBlockEntity", Object.class);
-        if (blockEntity != null) {
-            BlockPos pos = invokeMethod(blockEntity, "getBlockPos", BlockPos.class);
-            if (pos != null) return pos;
+        if (host == null) {
+            AE2CraftingLens.LOGGER.warn("extractPositionFromHost: host is null");
+            return null;
         }
         
-        BlockPos pos = invokeMethod(host, "getBlockPos", BlockPos.class);
-        if (pos != null) return pos;
+        String hostClassName = host.getClass().getName();
+        AE2CraftingLens.LOGGER.info("extractPositionFromHost: host class is {}", hostClassName);
         
+        // Log all interfaces of the host
+        Class<?>[] interfaces = host.getClass().getInterfaces();
+        StringBuilder interfaceNames = new StringBuilder();
+        for (Class<?> iface : interfaces) {
+            interfaceNames.append(iface.getName()).append(", ");
+        }
+        AE2CraftingLens.LOGGER.info("extractPositionFromHost: host interfaces: {}", interfaceNames.toString());
+        
+        // Try 1: Check if it's a BlockEntity
+        try {
+            Class<?> blockEntityClass = Class.forName("net.minecraft.world.level.block.entity.BlockEntity");
+            if (blockEntityClass.isInstance(host)) {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Host is BlockEntity, trying getBlockPos");
+                BlockPos pos = invokeMethod(host, "getBlockPos", BlockPos.class);
+                if (pos != null) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from BlockEntity: {}", pos);
+                    return pos;
+                }
+                AE2CraftingLens.LOGGER.warn("extractPositionFromHost: BlockEntity.getBlockPos() returned null");
+            } else {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Host is not BlockEntity");
+            }
+        } catch (ClassNotFoundException e) {
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: BlockEntity class not found");
+        }
+        
+        // Try 2: getBlockEntity()
+        Object blockEntity = invokeMethod(host, "getBlockEntity", Object.class);
+        if (blockEntity != null) {
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got blockEntity: {}", blockEntity.getClass().getName());
+            BlockPos pos = invokeMethod(blockEntity, "getBlockPos", BlockPos.class);
+            if (pos != null) {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from blockEntity: {}", pos);
+                return pos;
+            }
+            AE2CraftingLens.LOGGER.warn("extractPositionFromHost: blockEntity.getBlockPos() returned null");
+        } else {
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: getBlockEntity() returned null");
+        }
+        
+        // Try 3: Direct getBlockPos() on host
+        BlockPos pos = invokeMethod(host, "getBlockPos", BlockPos.class);
+        if (pos != null) {
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position directly from host: {}", pos);
+            return pos;
+        }
+        AE2CraftingLens.LOGGER.info("extractPositionFromHost: host.getBlockPos() returned null");
+        
+        // Try 4: Check if host is IPartHost and use getLocation()
+        try {
+            Class<?> iPartHostClass = Class.forName("appeng.parts.IPartHost");
+            if (iPartHostClass.isInstance(host)) {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Host is IPartHost, using getLocation()");
+                Object location = invokeMethod(host, "getLocation", Object.class);
+                if (location != null) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got location: {}", location.getClass().getName());
+                    pos = invokeMethod(location, "getPos", BlockPos.class);
+                    if (pos != null) {
+                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from location.getPos(): {}", pos);
+                        return pos;
+                    }
+                    AE2CraftingLens.LOGGER.warn("extractPositionFromHost: location.getPos() returned null");
+                } else {
+                    AE2CraftingLens.LOGGER.warn("extractPositionFromHost: getLocation() returned null");
+                }
+            } else {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Host is not IPartHost");
+            }
+        } catch (ClassNotFoundException e) {
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: IPartHost class not found");
+        }
+        
+        // Try 5: Check for IPatternProviderHost specific methods
+        try {
+            Class<?> patternProviderHostClass = Class.forName("appeng.helpers.patternprovider.IPatternProviderHost");
+            if (patternProviderHostClass.isInstance(host)) {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Host is IPatternProviderHost");
+                
+                // Try getLocation() method which should be available on IPatternProviderHost
+                Object location = invokeMethod(host, "getLocation", Object.class);
+                if (location != null) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got location from IPatternProviderHost: {}", location.getClass().getName());
+                    pos = invokeMethod(location, "getPos", BlockPos.class);
+                    if (pos != null) {
+                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from IPatternProviderHost location.getPos(): {}", pos);
+                        return pos;
+                    }
+                    AE2CraftingLens.LOGGER.warn("extractPositionFromHost: location.getPos() returned null");
+                } else {
+                    AE2CraftingLens.LOGGER.warn("extractPositionFromHost: IPatternProviderHost.getLocation() returned null");
+                }
+            } else {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Host is not IPatternProviderHost");
+            }
+        } catch (ClassNotFoundException e) {
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: IPatternProviderHost class not found");
+        }
+        
+        // Try 6: Check if host has getHost() method (nested host)
         try {
             Method getHostMethod = host.getClass().getMethod("getHost");
             Object partHost = getHostMethod.invoke(host);
             if (partHost != null) {
-                pos = invokeMethod(partHost, "getBlockPos", BlockPos.class);
-                if (pos != null) return pos;
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got nested host: {}", partHost.getClass().getName());
+                pos = extractPositionFromHost(partHost); // Recursive call
+                if (pos != null) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from nested host: {}", pos);
+                    return pos;
+                }
+                AE2CraftingLens.LOGGER.warn("extractPositionFromHost: nested host extraction returned null");
+            } else {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: getHost() returned null");
             }
         } catch (Exception e) {
-            AE2CraftingLens.LOGGER.debug("Failed to get nested host", e);
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: Failed to get nested host: {}", e.getMessage());
         }
         
+        // Try 7: Check for getGridNode() method and get location from grid node
+        try {
+            Object gridNode = invokeMethod(host, "getGridNode", Object.class);
+            if (gridNode != null) {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got gridNode: {}", gridNode.getClass().getName());
+                // Try to get location from grid node
+                Object gridHost = invokeMethod(gridNode, "getGridHost", Object.class);
+                if (gridHost != null) {
+                    AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got gridHost: {}", gridHost.getClass().getName());
+                    pos = extractPositionFromHost(gridHost); // Recursive call
+                    if (pos != null) {
+                        AE2CraftingLens.LOGGER.info("extractPositionFromHost: Got position from gridHost: {}", pos);
+                        return pos;
+                    }
+                }
+            } else {
+                AE2CraftingLens.LOGGER.info("extractPositionFromHost: getGridNode() returned null");
+            }
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.info("extractPositionFromHost: Failed to get gridNode: {}", e.getMessage());
+        }
+        
+        AE2CraftingLens.LOGGER.warn("extractPositionFromHost: All methods failed to get position from host: {}", hostClassName);
         return null;
     }
     
@@ -913,13 +1085,18 @@ public class PatternProviderRequestHandler {
         }
         
         String providerClassName = provider.getClass().getName();
+        AE2CraftingLens.LOGGER.info("Getting position for provider: {}", providerClassName);
         
+        // Try each strategy in order
         for (ProviderStrategy strategy : PROVIDER_STRATEGIES) {
             if (strategy.canHandle(provider)) {
+                AE2CraftingLens.LOGGER.info("Using strategy: {}", strategy.getClass().getSimpleName());
                 BlockPos pos = strategy.extractPosition(provider);
                 if (pos != null) {
+                    AE2CraftingLens.LOGGER.info("Found position: {}", pos);
                     return pos;
                 }
+                AE2CraftingLens.LOGGER.info("Strategy {} failed to find position", strategy.getClass().getSimpleName());
             }
         }
         
