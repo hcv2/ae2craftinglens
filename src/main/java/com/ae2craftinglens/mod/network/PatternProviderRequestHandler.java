@@ -120,6 +120,13 @@ public class PatternProviderRequestHandler {
         try {
             AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: rowIndex={}, targetKey={}", rowIndex, targetKey);
             
+            if (targetKey == null && rowIndex >= 0) {
+                targetKey = extractAEKeyFromMenu(menu, rowIndex);
+                if (targetKey != null) {
+                    AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Extracted targetKey from menu at rowIndex {}: {}", rowIndex, targetKey);
+                }
+            }
+            
             int selectedCpuSerial = -1;
             try {
                 Method getSelectedCpuSerialMethod = menu.getClass().getMethod("getSelectedCpuSerial");
@@ -133,22 +140,26 @@ public class PatternProviderRequestHandler {
             
             Object targetCluster = null;
             
-            // Try to find CPU-related fields by scanning all declared fields
             AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Scanning menu fields for CPU...");
-            for (java.lang.reflect.Field field : menu.getClass().getDeclaredFields()) {
-                String fieldName = field.getName();
-                field.setAccessible(true);
+            
+            String[] cpuFieldNames = {"cpu", "selectedCpu", "f_38848_", "f_38840_"};
+            for (String fieldName : cpuFieldNames) {
                 try {
-                    Object fieldValue = field.get(menu);
-                    if (fieldValue != null) {
-                        String fieldTypeName = fieldValue.getClass().getName();
-                        
-                        // Check if this field looks like a CPU or cluster
-                        if (fieldTypeName.contains("CraftingCPU") || fieldTypeName.contains("CPU") || 
-                            fieldName.contains("cpu") || fieldName.contains("Cpu") || fieldName.contains("selectedCpu")) {
-                            AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Found CPU-related field '{}' type: {}", fieldName, fieldTypeName);
+                    java.lang.reflect.Field field = findFieldInHierarchy(menu.getClass(), fieldName);
+                    if (field != null) {
+                        field.setAccessible(true);
+                        Object fieldValue = field.get(menu);
+                        if (fieldValue != null) {
+                            String fieldTypeName = fieldValue.getClass().getName();
+                            AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Found field '{}' type: {}", fieldName, fieldTypeName);
                             
-                            // Try to get cluster from this field
+                            // Check if this is directly a CraftingCPUCluster
+                            if (fieldTypeName.contains("CraftingCPUCluster")) {
+                                AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Field '{}' is directly a CraftingCPUCluster!", fieldName);
+                                targetCluster = fieldValue;
+                                break;
+                            }
+                            
                             try {
                                 Method getClusterMethod = fieldValue.getClass().getMethod("getCluster");
                                 targetCluster = getClusterMethod.invoke(fieldValue);
@@ -158,6 +169,23 @@ public class PatternProviderRequestHandler {
                                 }
                             } catch (NoSuchMethodException e) {
                                 AE2CraftingLens.LOGGER.debug("Field '{}' doesn't have getCluster method", fieldName);
+                                
+                                for (Method m : fieldValue.getClass().getMethods()) {
+                                    if (m.getReturnType().getName().contains("CraftingCPUCluster")) {
+                                        AE2CraftingLens.LOGGER.info("  Found method returning CraftingCPUCluster: {}", m.getName());
+                                        try {
+                                            Object result = m.invoke(fieldValue);
+                                            if (result != null) {
+                                                targetCluster = result;
+                                                AE2CraftingLens.LOGGER.info("  Got cluster from {}.{}: {}", fieldName, m.getName(), result.getClass().getName());
+                                                break;
+                                            }
+                                        } catch (Exception ex) {
+                                            AE2CraftingLens.LOGGER.debug("  Method {} failed: {}", m.getName(), ex.getMessage());
+                                        }
+                                    }
+                                }
+                                if (targetCluster != null) break;
                             } catch (Exception e) {
                                 AE2CraftingLens.LOGGER.debug("Failed to get cluster from field '{}': {}", fieldName, e.getMessage());
                             }
@@ -165,6 +193,50 @@ public class PatternProviderRequestHandler {
                     }
                 } catch (Exception e) {
                     AE2CraftingLens.LOGGER.debug("Error accessing field '{}': {}", fieldName, e.getMessage());
+                }
+            }
+            
+            if (targetCluster == null) {
+                AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Trying to find cluster by scanning all fields...");
+                for (java.lang.reflect.Field field : menu.getClass().getDeclaredFields()) {
+                    String fieldName = field.getName();
+                    field.setAccessible(true);
+                    try {
+                        Object fieldValue = field.get(menu);
+                        if (fieldValue != null) {
+                            String fieldTypeName = fieldValue.getClass().getName();
+                            
+                            if (fieldTypeName.contains("CraftingCPUCluster")) {
+                                AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Found CraftingCPUCluster directly in field '{}'", fieldName);
+                                targetCluster = fieldValue;
+                                break;
+                            }
+                            
+                            if (fieldTypeName.contains("CraftingCPU") || fieldTypeName.contains("CPU") || 
+                                fieldName.toLowerCase().contains("cpu")) {
+                                AE2CraftingLens.LOGGER.info("findProvidersFromCurrentCraftingJob: Found potential CPU field '{}' type: {}", fieldName, fieldTypeName);
+                                
+                                for (Method m : fieldValue.getClass().getMethods()) {
+                                    if (m.getReturnType().getName().contains("CraftingCPUCluster")) {
+                                        AE2CraftingLens.LOGGER.info("  Found method returning CraftingCPUCluster: {}", m.getName());
+                                        try {
+                                            Object result = m.invoke(fieldValue);
+                                            if (result != null) {
+                                                targetCluster = result;
+                                                AE2CraftingLens.LOGGER.info("  Got cluster from {}.{}: {}", fieldName, m.getName(), result.getClass().getName());
+                                                break;
+                                            }
+                                        } catch (Exception ex) {
+                                            AE2CraftingLens.LOGGER.debug("  Method {} failed: {}", m.getName(), ex.getMessage());
+                                        }
+                                    }
+                                }
+                                if (targetCluster != null) break;
+                            }
+                        }
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Error accessing field '{}': {}", fieldName, e.getMessage());
+                    }
                 }
             }
             
@@ -202,7 +274,7 @@ public class PatternProviderRequestHandler {
                                 }
                                 
                                 if (pattern != null) {
-                                    if (targetKey == null || isPatternOutputsItem(pattern, targetKey)) {
+                                    if (targetKey == null || isPatternRelatedToItem(pattern, targetKey)) {
                                         relevantPatterns.add(pattern);
                                     }
                                 }
@@ -424,12 +496,10 @@ public class PatternProviderRequestHandler {
                     craftingLogic = craftingLogicField.get(cluster);
                     break;
                 } catch (Exception e) {
-                    // Try next field name
                 }
             }
             
             if (craftingLogic == null) {
-                // AE2 1.20.1: Use CraftingLogic instead of CraftingCpuLogic
                 craftingLogic = findFieldByTypeName(cluster, "CraftingLogic");
                 if (craftingLogic == null) {
                     craftingLogic = findFieldByTypeName(cluster, "CraftingLogic");
@@ -443,7 +513,6 @@ public class PatternProviderRequestHandler {
                     jobField.setAccessible(true);
                     job = jobField.get(craftingLogic);
                 } catch (Exception e) {
-                    // ignore
                 }
                 
                 if (job != null) {
@@ -455,49 +524,53 @@ public class PatternProviderRequestHandler {
                         if (tasks instanceof java.util.Map) {
                             java.util.Map<?, ?> tasksMap = (java.util.Map<?, ?>) tasks;
                             
-                            AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: tasksMap size: {}", tasksMap.size());
+                            AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: tasksMap size: {}, rowIndex: {}, targetKey: {}", tasksMap.size(), rowIndex, targetKey);
                             
-                            if (targetKey == null && rowIndex >= 0 && rowIndex < tasksMap.size()) {
-                                AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Trying to find pattern at rowIndex {}", rowIndex);
-                                
+                            if (rowIndex >= 0 && rowIndex < tasksMap.size() && targetKey != null) {
                                 int currentIndex = 0;
+                                Object patternAtRowIndex = null;
                                 for (java.util.Map.Entry<?, ?> entry : tasksMap.entrySet()) {
                                     if (currentIndex == rowIndex) {
-                                        Object pattern = entry.getKey();
-                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Found pattern at index {}: {}", rowIndex, pattern.getClass().getName());
-                                        
-                                        try {
-                                            Method getPrimaryOutputMethod = pattern.getClass().getMethod("getPrimaryOutput");
-                                            Object primaryOutput = getPrimaryOutputMethod.invoke(pattern);
-                                            
-                                            if (primaryOutput != null) {
-                                                Class<?> genericStackClass = Class.forName("appeng.api.stacks.GenericStack");
-                                                if (genericStackClass.isInstance(primaryOutput)) {
-                                                    Method whatMethod = genericStackClass.getMethod("what");
-                                                    Object outputKey = whatMethod.invoke(primaryOutput);
-                                                    
-                                                    if (outputKey != null) {
-                                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Pattern at index {} outputs: {}", rowIndex, outputKey);
-                                                        
-                                                        relevantPatterns.add(pattern);
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        } catch (Exception e) {
-                                            AE2CraftingLens.LOGGER.debug("Failed to get output from pattern: {}", e.getMessage());
-                                        }
+                                        patternAtRowIndex = entry.getKey();
+                                        break;
                                     }
                                     currentIndex++;
                                 }
-                            } else {
-                                for (Object pattern : tasksMap.keySet()) {
-                                    if (pattern != null) {
-                                        if (!isSelectedCpu || targetKey == null || isPatternOutputsItem(pattern, targetKey)) {
+                                
+                                if (patternAtRowIndex != null) {
+                                    if (isPatternOutputsItem(patternAtRowIndex, targetKey)) {
+                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Pattern at rowIndex {} outputs targetKey: {}", rowIndex, targetKey);
+                                        relevantPatterns.add(patternAtRowIndex);
+                                    } else if (isPatternInputsItem(patternAtRowIndex, targetKey)) {
+                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Pattern at rowIndex {} uses targetKey as input: {}", rowIndex, targetKey);
+                                        relevantPatterns.add(patternAtRowIndex);
+                                    } else {
+                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Pattern at rowIndex {} is NOT related to targetKey {}, this indicates rowIndex mismatch", rowIndex, targetKey);
+                                    }
+                                }
+                            } else if (targetKey != null) {
+                                AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: rowIndex invalid ({}), using targetKey to match outputs only", rowIndex);
+                                
+                                for (java.util.Map.Entry<?, ?> entry : tasksMap.entrySet()) {
+                                    Object pattern = entry.getKey();
+                                    if (pattern != null && isPatternOutputsItem(pattern, targetKey)) {
+                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Found pattern outputting targetKey: {}", targetKey);
+                                        relevantPatterns.add(pattern);
+                                    }
+                                }
+                                
+                                if (relevantPatterns.isEmpty()) {
+                                    AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: No pattern outputs targetKey, checking for inputs");
+                                    for (java.util.Map.Entry<?, ?> entry : tasksMap.entrySet()) {
+                                        Object pattern = entry.getKey();
+                                        if (pattern != null && isPatternInputsItem(pattern, targetKey)) {
+                                            AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Found pattern using targetKey as input: {}", targetKey);
                                             relevantPatterns.add(pattern);
                                         }
                                     }
                                 }
+                            } else {
+                                AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Both rowIndex and targetKey are invalid, returning empty");
                             }
                         }
                     } catch (Exception e) {
@@ -573,7 +646,6 @@ public class PatternProviderRequestHandler {
                     }
                 }
             } catch (Exception e) {
-                // ignore
             }
             
             try {
@@ -594,13 +666,61 @@ public class PatternProviderRequestHandler {
                     }
                 }
             } catch (Exception e) {
-                // ignore
             }
         } catch (Exception e) {
-            // ignore
         }
         
         return false;
+    }
+    
+    private static boolean isPatternInputsItem(Object pattern, Object targetKey) {
+        try {
+            Class<?> genericStackClass = Class.forName("appeng.api.stacks.GenericStack");
+            
+            try {
+                Method getSparseInputsMethod = pattern.getClass().getMethod("getSparseInputs");
+                Object sparseInputs = getSparseInputsMethod.invoke(pattern);
+                
+                if (sparseInputs != null && sparseInputs instanceof Object[]) {
+                    for (Object input : (Object[]) sparseInputs) {
+                        if (input != null && genericStackClass.isInstance(input)) {
+                            Method whatMethod = genericStackClass.getMethod("what");
+                            Object inputKey = whatMethod.invoke(input);
+                            
+                            if (inputKey != null && inputKey.equals(targetKey)) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                }
+            } catch (Exception e) {
+            }
+            
+            Method getInputsMethod = pattern.getClass().getMethod("getInputs");
+            Object inputs = getInputsMethod.invoke(pattern);
+            
+            if (inputs != null && inputs instanceof Object[]) {
+                for (Object input : (Object[]) inputs) {
+                    if (input != null && genericStackClass.isInstance(input)) {
+                        Method whatMethod = genericStackClass.getMethod("what");
+                        Object inputKey = whatMethod.invoke(input);
+                        
+                        if (inputKey != null && inputKey.equals(targetKey)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+        }
+        
+        return false;
+    }
+    
+    private static boolean isPatternRelatedToItem(Object pattern, Object targetKey) {
+        return isPatternOutputsItem(pattern, targetKey) || isPatternInputsItem(pattern, targetKey);
     }
     
     private static Set<ProviderLocation> findPatternProvidersForKey(Object grid, Object targetKey, Level defaultLevel) {
@@ -618,34 +738,115 @@ public class PatternProviderRequestHandler {
             Method getCraftingForMethod = craftingService.getClass().getMethod("getCraftingFor", aeKeyClass);
             Iterable<?> patterns = (Iterable<?>) getCraftingForMethod.invoke(craftingService, targetKey);
             
-            if (patterns == null) {
-                return positions;
-            }
-            
-            for (Object pattern : patterns) {
-                try {
-                    Method getProvidersMethod = craftingService.getClass().getMethod("getProviders", patternDetailsClass);
-                    Iterable<?> providers = (Iterable<?>) getProvidersMethod.invoke(craftingService, pattern);
-                    
-                    if (providers != null) {
-                        for (Object provider : providers) {
-                            BlockPos pos = getProviderPosition(provider);
-                            if (pos != null) {
-                                Level level = getProviderLevel(provider, defaultLevel);
-                                positions.add(new ProviderLocation(level.dimension(), pos));
+            if (patterns != null) {
+                for (Object pattern : patterns) {
+                    try {
+                        Method getProvidersMethod = craftingService.getClass().getMethod("getProviders", patternDetailsClass);
+                        Iterable<?> providers = (Iterable<?>) getProvidersMethod.invoke(craftingService, pattern);
+                        
+                        if (providers != null) {
+                            for (Object provider : providers) {
+                                BlockPos pos = getProviderPosition(provider);
+                                if (pos != null) {
+                                    Level level = getProviderLevel(provider, defaultLevel);
+                                    positions.add(new ProviderLocation(level.dimension(), pos));
+                                }
                             }
                         }
+                    } catch (Exception e) {
                     }
-                } catch (Exception e) {
-                    // ignore
                 }
             }
+            
+            Set<ProviderLocation> inputProviders = findProvidersConsumingKey(grid, craftingService, targetKey, defaultLevel);
+            positions.addAll(inputProviders);
+            
+            AE2CraftingLens.LOGGER.info("findPatternProvidersForKey: Found {} providers for key {}", positions.size(), targetKey);
             
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error finding pattern provider positions", e);
         }
         
         return positions;
+    }
+    
+    private static Set<ProviderLocation> findProvidersConsumingKey(Object grid, Object craftingService, Object targetKey, Level defaultLevel) {
+        Set<ProviderLocation> positions = new HashSet<>();
+        
+        try {
+            Class<?> patternProviderHostClass = Class.forName("appeng.helpers.patternprovider.IPatternProviderHost");
+            Class<?> patternDetailsClass = Class.forName("appeng.api.crafting.IPatternDetails");
+            
+            Method getMachineNodesMethod = grid.getClass().getMethod("getMachineNodes", Class.class);
+            Iterable<?> nodes = (Iterable<?>) getMachineNodesMethod.invoke(grid, patternProviderHostClass);
+            
+            if (nodes != null) {
+                for (Object node : nodes) {
+                    try {
+                        Method getOwnerMethod = node.getClass().getMethod("getOwner");
+                        Object host = getOwnerMethod.invoke(node);
+                        
+                        if (host != null && patternProviderHostClass.isInstance(host)) {
+                            Method getLogicMethod = host.getClass().getMethod("getLogic");
+                            Object logic = getLogicMethod.invoke(host);
+                            
+                            if (logic != null) {
+                                Method getPatternsMethod = logic.getClass().getMethod("getPatterns");
+                                Iterable<?> patternList = (Iterable<?>) getPatternsMethod.invoke(logic);
+                                
+                                if (patternList != null) {
+                                    for (Object pattern : patternList) {
+                                        if (isPatternInputsItem(pattern, targetKey)) {
+                                            BlockPos pos = getProviderPositionFromHost(host);
+                                            if (pos != null) {
+                                                Level level = getProviderLevel(host, defaultLevel);
+                                                positions.add(new ProviderLocation(level.dimension(), pos));
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                    }
+                }
+            }
+            
+            AE2CraftingLens.LOGGER.info("findProvidersConsumingKey: Found {} providers consuming key {}", positions.size(), targetKey);
+            
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("Error finding providers consuming key: {}", e.getMessage());
+        }
+        
+        return positions;
+    }
+    
+    private static BlockPos getProviderPositionFromHost(Object host) {
+        try {
+            Method getLocationMethod = host.getClass().getMethod("getLocation");
+            Object location = getLocationMethod.invoke(host);
+            if (location != null) {
+                Method getPosMethod = location.getClass().getMethod("getPos");
+                Object pos = getPosMethod.invoke(location);
+                if (pos instanceof BlockPos) {
+                    return (BlockPos) pos;
+                }
+            }
+            
+            Method getBlockEntityMethod = host.getClass().getMethod("getBlockEntity");
+            Object be = getBlockEntityMethod.invoke(host);
+            if (be != null) {
+                Method getBlockPosMethod = be.getClass().getMethod("getBlockPos");
+                Object pos = getBlockPosMethod.invoke(be);
+                if (pos instanceof BlockPos) {
+                    return (BlockPos) pos;
+                }
+            }
+        } catch (Exception e) {
+        }
+        
+        return invokeMethod(host, "getBlockPos", BlockPos.class);
     }
     
     private static Set<ProviderLocation> findAllActivePatternProviders(Object grid, Object menu, Level defaultLevel) {
@@ -729,6 +930,17 @@ public class PatternProviderRequestHandler {
             
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error finding grid from CraftingStatusMenu", e);
+        }
+        return null;
+    }
+    
+    private static java.lang.reflect.Field findFieldInHierarchy(Class<?> clazz, String fieldName) {
+        while (clazz != null && !clazz.equals(Object.class)) {
+            try {
+                return clazz.getDeclaredField(fieldName);
+            } catch (NoSuchFieldException e) {
+                clazz = clazz.getSuperclass();
+            }
         }
         return null;
     }
@@ -1571,6 +1783,194 @@ public class PatternProviderRequestHandler {
         }
         
         AE2CraftingLens.LOGGER.warn("Could not find position for provider: {}", providerClassName);
+        return null;
+    }
+    
+    private static Object extractAEKeyFromMenu(Object menu, int rowIndex) {
+        try {
+            AE2CraftingLens.LOGGER.info("extractAEKeyFromMenu: Attempting to extract AEKey from menu at rowIndex {}", rowIndex);
+            
+            for (Field f : menu.getClass().getDeclaredFields()) {
+                String fieldTypeName = f.getType().getName();
+                if (fieldTypeName.contains("CraftingJobStatus")) {
+                    f.setAccessible(true);
+                    Object status = f.get(menu);
+                    if (status != null) {
+                        AE2CraftingLens.LOGGER.info("extractAEKeyFromMenu: Found CraftingJobStatus in menu field '{}'", f.getName());
+                        Object key = extractAEKeyFromStatus(status, rowIndex);
+                        if (key != null) {
+                            return key;
+                        }
+                    }
+                }
+            }
+            
+            Object cluster = findFieldByTypeName(menu, "CraftingCPUCluster");
+            if (cluster != null) {
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromMenu: Found CraftingCPUCluster, extracting AEKey from tasks");
+                Object key = extractAEKeyFromClusterTasks(cluster, rowIndex);
+                if (key != null) {
+                    return key;
+                }
+            }
+            
+            String[] cpuFieldNames = {"cpu", "selectedCpu", "f_38848_", "f_38840_"};
+            for (String fieldName : cpuFieldNames) {
+                try {
+                    Field field = findFieldInHierarchy(menu.getClass(), fieldName);
+                    if (field != null) {
+                        field.setAccessible(true);
+                        Object fieldValue = field.get(menu);
+                        if (fieldValue != null && fieldValue.getClass().getName().contains("CraftingCPUCluster")) {
+                            AE2CraftingLens.LOGGER.info("extractAEKeyFromMenu: Found CraftingCPUCluster in field '{}'", fieldName);
+                            Object key = extractAEKeyFromClusterTasks(fieldValue, rowIndex);
+                            if (key != null) {
+                                return key;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                }
+            }
+            
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("Error extracting AEKey from menu: {}", e.getMessage());
+        }
+        return null;
+    }
+    
+    private static Object extractAEKeyFromClusterTasks(Object cluster, int rowIndex) {
+        try {
+            AE2CraftingLens.LOGGER.info("extractAEKeyFromClusterTasks: Extracting from cluster at rowIndex {}", rowIndex);
+            
+            Object craftingLogic = null;
+            String[] logicFieldNames = {"logic", "craftingLogic", "f_legacy_logic_"};
+            for (String fieldName : logicFieldNames) {
+                try {
+                    Field craftingLogicField = cluster.getClass().getDeclaredField(fieldName);
+                    craftingLogicField.setAccessible(true);
+                    craftingLogic = craftingLogicField.get(cluster);
+                    if (craftingLogic != null) {
+                        AE2CraftingLens.LOGGER.info("extractAEKeyFromClusterTasks: Found craftingLogic in field '{}'", fieldName);
+                        break;
+                    }
+                } catch (Exception e) {
+                }
+            }
+            
+            if (craftingLogic == null) {
+                craftingLogic = findFieldByTypeName(cluster, "CraftingLogic");
+            }
+            
+            if (craftingLogic != null) {
+                Field jobField = craftingLogic.getClass().getDeclaredField("job");
+                jobField.setAccessible(true);
+                Object job = jobField.get(craftingLogic);
+                
+                if (job != null) {
+                    AE2CraftingLens.LOGGER.info("extractAEKeyFromClusterTasks: Found job in craftingLogic");
+                    
+                    Field tasksField = job.getClass().getDeclaredField("tasks");
+                    tasksField.setAccessible(true);
+                    Object tasks = tasksField.get(job);
+                    
+                    if (tasks instanceof java.util.Map) {
+                        java.util.Map<?, ?> tasksMap = (java.util.Map<?, ?>) tasks;
+                        AE2CraftingLens.LOGGER.info("extractAEKeyFromClusterTasks: tasksMap size: {}", tasksMap.size());
+                        
+                        if (rowIndex >= 0 && rowIndex < tasksMap.size()) {
+                            int currentIndex = 0;
+                            for (java.util.Map.Entry<?, ?> entry : tasksMap.entrySet()) {
+                                if (currentIndex == rowIndex) {
+                                    Object pattern = entry.getKey();
+                                    if (pattern != null) {
+                                        AE2CraftingLens.LOGGER.info("extractAEKeyFromClusterTasks: Found pattern at rowIndex {}: {}", rowIndex, pattern.getClass().getName());
+                                        
+                                        try {
+                                            Method getPrimaryOutputMethod = pattern.getClass().getMethod("getPrimaryOutput");
+                                            Object primaryOutput = getPrimaryOutputMethod.invoke(pattern);
+                                            if (primaryOutput != null) {
+                                                Class<?> genericStackClass = Class.forName("appeng.api.stacks.GenericStack");
+                                                if (genericStackClass.isInstance(primaryOutput)) {
+                                                    Method whatMethod = genericStackClass.getMethod("what");
+                                                    Object key = whatMethod.invoke(primaryOutput);
+                                                    if (key != null) {
+                                                        AE2CraftingLens.LOGGER.info("extractAEKeyFromClusterTasks: Extracted AEKey: {}", key);
+                                                        return key;
+                                                    }
+                                                }
+                                            }
+                                        } catch (Exception e) {
+                                            AE2CraftingLens.LOGGER.debug("Failed to get primary output: {}", e.getMessage());
+                                        }
+                                    }
+                                    break;
+                                }
+                                currentIndex++;
+                            }
+                        }
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("Error extracting AEKey from cluster tasks: {}", e.getMessage());
+        }
+        return null;
+    }
+    
+    private static Object extractAEKeyFromStatus(Object status, int rowIndex) {
+        try {
+            for (Field f : status.getClass().getDeclaredFields()) {
+                f.setAccessible(true);
+                Object fieldValue = f.get(status);
+                if (fieldValue instanceof List) {
+                    List<?> entries = (List<?>) fieldValue;
+                    if (rowIndex >= 0 && rowIndex < entries.size()) {
+                        Object entry = entries.get(rowIndex);
+                        if (entry != null) {
+                            Object key = extractAEKeyFromEntry(entry);
+                            if (key != null) {
+                                AE2CraftingLens.LOGGER.info("extractAEKeyFromStatus: Extracted AEKey at rowIndex {}: {}", rowIndex, key);
+                                return key;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("Error extracting AEKey from status: {}", e.getMessage());
+        }
+        return null;
+    }
+    
+    private static Object extractAEKeyFromEntry(Object entry) {
+        try {
+            for (Field f : entry.getClass().getDeclaredFields()) {
+                f.setAccessible(true);
+                Object val = f.get(entry);
+                if (val != null) {
+                    String typeName = val.getClass().getName();
+                    if (typeName.contains("AEKey") || typeName.contains("AEItemKey")) {
+                        return val;
+                    }
+                    if (typeName.contains("GenericStack")) {
+                        Method whatMethod = val.getClass().getMethod("what");
+                        return whatMethod.invoke(val);
+                    }
+                }
+            }
+            
+            try {
+                Field whatField = entry.getClass().getDeclaredField("what");
+                whatField.setAccessible(true);
+                return whatField.get(entry);
+            } catch (NoSuchFieldException e) {
+            }
+            
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("Error extracting AEKey from entry: {}", e.getMessage());
+        }
         return null;
     }
 }

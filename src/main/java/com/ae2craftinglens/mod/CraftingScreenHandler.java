@@ -9,6 +9,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 public class CraftingScreenHandler {
 
     private AEKey lastClickedAEKey = null;
@@ -120,14 +124,6 @@ public class CraftingScreenHandler {
             AEKey aeKey = extractAEKeyFromTable(rowIndex);
 
             if (aeKey == null) {
-                aeKey = extractAEKeyFromSelectedCpu();
-                if (aeKey != null) {
-                    AE2CraftingLens.LOGGER.info("Extracted AEKey from selected CPU, but sending null to force server-side rowIndex lookup");
-                    aeKey = null;
-                }
-            }
-
-            if (aeKey == null) {
                 aeKey = lastClickedAEKey;
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("Using UI-extracted AEKey: {}", aeKey);
@@ -136,6 +132,8 @@ public class CraftingScreenHandler {
 
             if (aeKey == null) {
                 AE2CraftingLens.LOGGER.info("No AEKey from table, sending null to let server use rowIndex {} to find pattern", rowIndex);
+            } else {
+                AE2CraftingLens.LOGGER.info("Sending AEKey to server: {}, rowIndex: {}", aeKey, rowIndex);
             }
 
             RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey, rowIndex);
@@ -262,415 +260,270 @@ public class CraftingScreenHandler {
         }
         return null;
     }
-    
-    private AEKey extractAEKeyFromSelectedCpu() {
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc == null) {
-                AE2CraftingLens.LOGGER.debug("Minecraft instance is null");
-                return null;
-            }
-            
-            net.minecraft.client.player.LocalPlayer player = mc.player;
-            if (player == null) {
-                AE2CraftingLens.LOGGER.debug("Player is null");
-                return null;
-            }
-            Object menu = player.containerMenu;
-            if (menu == null) {
-                AE2CraftingLens.LOGGER.debug("Player has no open menu");
-                return null;
-            }
-            
-            String menuClassName = menu.getClass().getName();
-            if (!menuClassName.contains("CraftingStatusMenu")) {
-                AE2CraftingLens.LOGGER.debug("Menu is not CraftingStatusMenu: {}", menuClassName);
-                return null;
-            }
-            
-            AE2CraftingLens.LOGGER.info("Attempting to extract AEKey from CraftingStatusMenu");
-            
-            java.lang.reflect.Method getSelectedCpuSerialMethod = menu.getClass().getMethod("getSelectedCpuSerial");
-            int selectedCpuSerial = (int) getSelectedCpuSerialMethod.invoke(menu);
-            
-            if (selectedCpuSerial == -1) {
-                AE2CraftingLens.LOGGER.debug("No CPU selected");
-                return null;
-            }
-            
-            java.lang.reflect.Field cpuListField = menu.getClass().getDeclaredField("cpuList");
-            cpuListField.setAccessible(true);
-            Object cpuList = cpuListField.get(menu);
-            
-            java.lang.reflect.Method cpusMethod = cpuList.getClass().getMethod("cpus");
-            java.util.List<?> cpus = (java.util.List<?>) cpusMethod.invoke(cpuList);
-            
-            for (Object cpuEntry : cpus) {
-                java.lang.reflect.Method serialMethod = cpuEntry.getClass().getMethod("serial");
-                int serial = (int) serialMethod.invoke(cpuEntry);
-                
-                if (serial == selectedCpuSerial) {
-                    java.lang.reflect.Method currentJobMethod = cpuEntry.getClass().getMethod("currentJob");
-                    Object currentJob = currentJobMethod.invoke(cpuEntry);
-                    
-                    if (currentJob == null) {
-                        AE2CraftingLens.LOGGER.debug("Selected CPU has no current job");
-                        return null;
-                    }
-                    
-                    java.lang.reflect.Method whatMethod = currentJob.getClass().getMethod("what");
-                    Object aeKey = whatMethod.invoke(currentJob);
-                    
-                    if (aeKey != null) {
-                        AE2CraftingLens.LOGGER.info("Extracted AEKey from selected CPU {}: {}", serial, aeKey);
-                        return (AEKey) aeKey;
-                    } else {
-                        AE2CraftingLens.LOGGER.debug("GenericStack.what() returned null");
-                        return null;
-                    }
-                }
-            }
-            
-            AE2CraftingLens.LOGGER.debug("Selected CPU serial {} not found in CPU list", selectedCpuSerial);
-            return null;
-
-        } catch (Exception e) {
-            AE2CraftingLens.LOGGER.debug("Error extracting AEKey from selected CPU: {}", e.getMessage());
-            return null;
-        }
-    }
 
     private AEKey extractAEKeyFromTable(int rowIndex) {
         try {
             Minecraft mc = Minecraft.getInstance();
-            if (mc == null || mc.player == null) return null;
+            if (mc == null || mc.player == null) {
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: mc or player is null");
+                return null;
+            }
 
             Object menu = mc.player.containerMenu;
-            if (menu == null) return null;
+            if (menu == null) {
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: menu is null");
+                return null;
+            }
 
             String menuClassName = menu.getClass().getName();
-            if (!menuClassName.contains("CraftingStatusMenu")) return null;
-
-            AE2CraftingLens.LOGGER.info("Attempting to extract AEKey from menu, rowIndex: {}", rowIndex);
+            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: menu class: {}, rowIndex: {}", menuClassName, rowIndex);
+            
+            if (!menuClassName.contains("CraftingStatusMenu")) {
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: menu is not CraftingStatusMenu");
+                return null;
+            }
 
             Object screen = mc.screen;
-            if (screen != null) {
-                AE2CraftingLens.LOGGER.info("Screen class: {}", screen.getClass().getName());
-
-                try {
-                    java.lang.reflect.Field tableField = findFieldInHierarchy(screen.getClass(), "table");
-                    if (tableField != null) {
-                        tableField.setAccessible(true);
-                        Object table = tableField.get(screen);
-
-                        AE2CraftingLens.LOGGER.info("Got 'table' field from screen (found in {}), value: {}", tableField.getDeclaringClass().getName(), table);
-                        
-                        if (table != null) {
-                            String tableClassName = table.getClass().getName();
-                            AE2CraftingLens.LOGGER.info("Found 'table' field in screen, type: {}", tableClassName);
-
-                            if (table instanceof Object[]) {
-                                Object[] array = (Object[]) table;
-                                AE2CraftingLens.LOGGER.info("Table array length: {}", array.length);
-                                if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
-                                    AE2CraftingLens.LOGGER.info("Table item at row {}: {}", rowIndex, array[rowIndex].getClass().getName());
-                                    AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
-                                    if (key != null) return key;
-                                }
-                            } else if (table instanceof java.util.List) {
-                                java.util.List<?> list = (java.util.List<?>) table;
-                                AE2CraftingLens.LOGGER.info("Table list size: {}", list.size());
-                                if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
-                                    AE2CraftingLens.LOGGER.info("Table item at row {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
-                                    AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
-                                    if (key != null) return key;
-                                }
-                            } else {
-                            AE2CraftingLens.LOGGER.info("Table is not array or list, trying to extract 'rows' field from: {}", tableClassName);
-                            
-                            // Try to get 'rows' field from CraftingStatusTableRenderer
-                            try {
-                                java.lang.reflect.Field rowsField = table.getClass().getDeclaredField("rows");
-                                rowsField.setAccessible(true);
-                                Object rowsObj = rowsField.get(table);
-                                
-                                if (rowsObj instanceof java.util.List) {
-                                    java.util.List<?> rows = (java.util.List<?>) rowsObj;
-                                    AE2CraftingLens.LOGGER.info("Found 'rows' field in table with size: {}", rows.size());
-                                    
-                                    if (rowIndex >= 0 && rowIndex < rows.size() && rows.get(rowIndex) != null) {
-                                        Object row = rows.get(rowIndex);
-                                        AE2CraftingLens.LOGGER.info("Found row at index {}: {}", rowIndex, row.getClass().getName());
-                                        AEKey key = extractAEKeyFromObject(row, rowIndex);
-                                        if (key != null) {
-                                            AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from table.rows[{}]: {} ===", rowIndex, key);
-                                            return key;
-                                        }
-                                    }
-                                }
-                            } catch (NoSuchFieldException e) {
-                                AE2CraftingLens.LOGGER.info("'rows' field not found in table, trying other fields");
-                            } catch (Exception e) {
-                                AE2CraftingLens.LOGGER.info("Error accessing 'rows' field: {}", e.getMessage());
-                            }
-                            
-                            // Fallback: scan all fields
-                            for (java.lang.reflect.Field f : table.getClass().getDeclaredFields()) {
-                                try {
-                                    f.setAccessible(true);
-                                    Object fieldValue = f.get(table);
-                                    if (fieldValue != null) {
-                                        String subFieldTypeName = fieldValue.getClass().getName();
-                                        AE2CraftingLens.LOGGER.info("  Table field '{}' type: {} value type: {}", f.getName(), f.getType().getName(), subFieldTypeName);
-                                        
-                                        if (fieldValue instanceof java.util.List) {
-                                            java.util.List<?> list = (java.util.List<?>) fieldValue;
-                                            AE2CraftingLens.LOGGER.info("  Found List in table.{} with size: {}", f.getName(), list.size());
-                                            if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
-                                                AE2CraftingLens.LOGGER.info("  Found item at index {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
-                                                AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
-                                                if (key != null) {
-                                                    AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from table.{}[{}]: {} ===", f.getName(), rowIndex, key);
-                                                    return key;
-                                                }
-                                            }
-                                        } else if (fieldValue instanceof Object[]) {
-                                            Object[] array = (Object[]) fieldValue;
-                                            AE2CraftingLens.LOGGER.info("  Found array in table.{} with length: {}", f.getName(), array.length);
-                                            if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
-                                                AE2CraftingLens.LOGGER.info("  Found item at index {}: {}", rowIndex, array[rowIndex].getClass().getName());
-                                                AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
-                                                if (key != null) {
-                                                    AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from table.{}[{}]: {} ===", f.getName(), rowIndex, key);
-                                                    return key;
-                                                }
-                                            }
-                                        }
-                                    }
-                                } catch (Exception e) {
-                                    AE2CraftingLens.LOGGER.debug("  Error accessing field '{}': {}", f.getName(), e.getMessage());
-                                }
-                            }
-                        }
-                        }
-                    } else {
-                        AE2CraftingLens.LOGGER.info("Could not find 'table' field in screen class hierarchy");
-                    }
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.info("Error getting table from screen: {}", e.getMessage());
-                    e.printStackTrace();
-                }
+            if (screen == null) {
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: screen is null");
+                return null;
             }
+            
+            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: screen class: {}", screen.getClass().getName());
 
-            Class<?> clazz = menu.getClass();
-            java.util.Set<String> fieldNames = new java.util.HashSet<>();
-
-            while (clazz != null && !clazz.equals(Object.class)) {
-                for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
-                    fieldNames.add(f.getName());
-                }
-                clazz = clazz.getSuperclass();
-            }
-
-            AE2CraftingLens.LOGGER.info("Menu fields: {}", fieldNames);
-
-            String[] possibleTableFields = {"entries", "statusList", "craftingStatus", "rows", "items", "craftingItems", "jobItems", "taskItems", "data", "list", "status", "jobs", "tasks", "selectedCpu", "cpu"};
-            for (String fieldName : possibleTableFields) {
-                try {
-                    java.lang.reflect.Field field = menu.getClass().getDeclaredField(fieldName);
-                    field.setAccessible(true);
-                    Object fieldValue = field.get(menu);
-
-                    if (fieldValue != null) {
-                        String fieldTypeName = fieldValue.getClass().getName();
-                        AE2CraftingLens.LOGGER.info("Found field '{}' with type: {}", fieldName, fieldTypeName);
-
-                        if (fieldValue instanceof Object[]) {
-                            Object[] array = (Object[]) fieldValue;
-                            AE2CraftingLens.LOGGER.info("Field '{}' is array with length: {}", fieldName, array.length);
-                            if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
-                                AE2CraftingLens.LOGGER.info("Found item at index {}: {}", rowIndex, array[rowIndex].getClass().getName());
-                                AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
-                                if (key != null) {
-                                    AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from field '{}' at index {}: {} ===", fieldName, rowIndex, key);
-                                    return key;
-                                }
-                            }
-                        } else if (fieldValue instanceof java.util.List) {
-                            java.util.List<?> list = (java.util.List<?>) fieldValue;
-                            AE2CraftingLens.LOGGER.info("Field '{}' is List with size: {}", fieldName, list.size());
-                            if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
-                                AE2CraftingLens.LOGGER.info("Found item at index {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
-                                AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
-                                if (key != null) {
-                                    AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from field '{}' at index {}: {} ===", fieldName, rowIndex, key);
-                                    return key;
-                                }
-                            }
-                        } else if (fieldValue instanceof java.util.Map) {
-                            java.util.Map<?, ?> map = (java.util.Map<?, ?>) fieldValue;
-                            AE2CraftingLens.LOGGER.info("Field '{}' is Map with size: {}", fieldName, map.size());
-                        } else {
-                            AE2CraftingLens.LOGGER.info("Field '{}' is object of type: {}", fieldName, fieldTypeName);
-                            
-                            if (fieldName.equals("selectedCpu") || fieldName.equals("cpu")) {
-                                AE2CraftingLens.LOGGER.info("Trying to extract fields from {} object...", fieldName);
-                                for (java.lang.reflect.Field subField : fieldValue.getClass().getDeclaredFields()) {
-                                    try {
-                                        subField.setAccessible(true);
-                                        Object subFieldValue = subField.get(fieldValue);
-                                        if (subFieldValue != null) {
-                                            String subFieldTypeName = subFieldValue.getClass().getName();
-                                            AE2CraftingLens.LOGGER.info("  {}.{} type: {} value type: {}", fieldName, subField.getName(), subField.getType().getName(), subFieldTypeName);
-                                            
-                                            if (subFieldValue instanceof java.util.List) {
-                                                java.util.List<?> list = (java.util.List<?>) subFieldValue;
-                                                AE2CraftingLens.LOGGER.info("  Found List in {}.{} with size: {}", fieldName, subField.getName(), list.size());
-                                                if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
-                                                    AE2CraftingLens.LOGGER.info("  Found item at index {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
-                                                    AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
-                                                    if (key != null) {
-                                                        AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from {}.{}[{}]: {} ===", fieldName, subField.getName(), rowIndex, key);
-                                                        return key;
-                                                    }
-                                                }
-                                            } else if (subFieldValue instanceof Object[]) {
-                                                Object[] array = (Object[]) subFieldValue;
-                                                AE2CraftingLens.LOGGER.info("  Found array in {}.{} with length: {}", fieldName, subField.getName(), array.length);
-                                                if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
-                                                    AE2CraftingLens.LOGGER.info("  Found item at index {}: {}", rowIndex, array[rowIndex].getClass().getName());
-                                                    AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
-                                                    if (key != null) {
-                                                        AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from {}.{}[{}]: {} ===", fieldName, subField.getName(), rowIndex, key);
-                                                        return key;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } catch (Exception e) {
-                                        AE2CraftingLens.LOGGER.debug("  Error accessing {}.{}: {}", fieldName, subField.getName(), e.getMessage());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (NoSuchFieldException e) {
-                    // Field not found, continue
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.debug("Error accessing field '{}': {}", fieldName, e.getMessage());
-                }
-            }
-
-            AE2CraftingLens.LOGGER.info("Trying to find fields by type...");
-            clazz = menu.getClass();
-            while (clazz != null && !clazz.equals(Object.class)) {
-                for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
+            // AE2 1.20.1: Search for CraftingJobStatus type field directly in Screen class
+            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Searching for CraftingJobStatus type field in screen...");
+            Object status = null;
+            
+            for (java.lang.reflect.Field f : screen.getClass().getDeclaredFields()) {
+                String fieldTypeName = f.getType().getName();
+                if (fieldTypeName.contains("CraftingJobStatus")) {
+                    AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Found CraftingJobStatus field '{}' type: {}", f.getName(), fieldTypeName);
                     f.setAccessible(true);
                     try {
-                        Object val = f.get(menu);
-                        if (val != null) {
-                            String typeName = val.getClass().getName();
-                            if (typeName.contains("CraftingJob") || typeName.contains("CraftingTask") ||
-                                typeName.contains("JobEntry") || typeName.contains("TaskEntry") ||
-                                typeName.contains("GenericStack") || typeName.contains("AEItemStack")) {
-                                AE2CraftingLens.LOGGER.info("Found potential field '{}' of type: {}", f.getName(), typeName);
-
-                                if (val instanceof Object[]) {
-                                    Object[] array = (Object[]) val;
-                                    AE2CraftingLens.LOGGER.info("  Array length: {}", array.length);
-                                    if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
-                                        return extractAEKeyFromObject(array[rowIndex], rowIndex);
-                                    }
-                                } else if (val instanceof java.util.List) {
-                                    java.util.List<?> list = (java.util.List<?>) val;
-                                    AE2CraftingLens.LOGGER.info("  List size: {}", list.size());
-                                    if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
-                                        return extractAEKeyFromObject(list.get(rowIndex), rowIndex);
-                                    }
+                        status = f.get(screen);
+                        if (status != null) {
+                            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Got status object from field '{}'", f.getName());
+                            break;
+                        }
+                    } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Error getting status from field '{}': {}", f.getName(), e.getMessage());
+                    }
+                }
+            }
+            
+            // If not found in screen, try in menu
+            if (status == null) {
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: CraftingJobStatus not found in screen, trying menu...");
+                try {
+                    java.lang.reflect.Method getMenuMethod = screen.getClass().getMethod("getMenu");
+                    Object menuObj = getMenuMethod.invoke(screen);
+                    if (menuObj != null) {
+                        for (java.lang.reflect.Field f : menuObj.getClass().getDeclaredFields()) {
+                            String fieldTypeName = f.getType().getName();
+                            if (fieldTypeName.contains("CraftingJobStatus")) {
+                                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Found CraftingJobStatus in menu field '{}' type: {}", f.getName(), fieldTypeName);
+                                f.setAccessible(true);
+                                status = f.get(menuObj);
+                                if (status != null) {
+                                    AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Got status object from menu field '{}'", f.getName());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.debug("Error getting menu: {}", e.getMessage());
+                }
+            }
+            
+            // If status found, extract entries
+            if (status != null) {
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Status found, searching for entries list...");
+                
+                for (java.lang.reflect.Field f : status.getClass().getDeclaredFields()) {
+                    f.setAccessible(true);
+                    try {
+                        Object fieldValue = f.get(status);
+                        if (fieldValue instanceof List) {
+                            List<?> entries = (List<?>) fieldValue;
+                            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Found List in status.{} with size: {}", f.getName(), entries.size());
+                            
+                            if (rowIndex >= 0 && rowIndex < entries.size() && entries.get(rowIndex) != null) {
+                                Object entry = entries.get(rowIndex);
+                                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Found entry at index {}: {}", rowIndex, entry.getClass().getName());
+                                
+                                // Try to get 'what' field from entry
+                                Object whatObj = getFieldValueWithSrg(entry, "what", "f_38839_");
+                                if (whatObj instanceof AEKey) {
+                                    AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from status.entries[{}].what: {} ===", rowIndex, whatObj);
+                                    return (AEKey) whatObj;
+                                }
+                                
+                                // Fallback: try other methods
+                                AEKey key = extractAEKeyFromObject(entry, rowIndex);
+                                if (key != null) {
+                                    return key;
                                 }
                             }
                         }
                     } catch (Exception e) {
+                        AE2CraftingLens.LOGGER.debug("Error accessing field '{}': {}", f.getName(), e.getMessage());
                     }
                 }
-                clazz = clazz.getSuperclass();
+            } else {
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: CraftingJobStatus not found, trying table field...");
             }
 
-            AE2CraftingLens.LOGGER.info("Trying screen tableRenderer...");
-            try {
-                if (screen != null) {
-                    AE2CraftingLens.LOGGER.info("Screen class: {}", screen.getClass().getName());
+            java.lang.reflect.Field tableField = findFieldInHierarchy(screen.getClass(), "table");
+            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: tableField found: {}", tableField != null);
+            
+            if (tableField != null) {
+                tableField.setAccessible(true);
+                Object table = tableField.get(screen);
 
-                    java.util.Set<String> screenFieldNames = new java.util.HashSet<>();
-                    Class<?> screenClass = screen.getClass();
-                    while (screenClass != null && !screenClass.equals(Object.class)) {
-                        for (java.lang.reflect.Field f : screenClass.getDeclaredFields()) {
-                            screenFieldNames.add(f.getName());
+                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Got 'table' field, type: {}", 
+                    table != null ? table.getClass().getName() : "null");
+                
+                if (table != null) {
+                    String tableClassName = table.getClass().getName();
+                    AE2CraftingLens.LOGGER.info("Table class: {}", tableClassName);
+
+                    if (table instanceof Object[]) {
+                        Object[] array = (Object[]) table;
+                        AE2CraftingLens.LOGGER.info("Table array length: {}", array.length);
+                        if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
+                            AE2CraftingLens.LOGGER.info("Table item at row {}: {}", rowIndex, array[rowIndex].getClass().getName());
+                            AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
+                            if (key != null) return key;
                         }
-                        screenClass = screenClass.getSuperclass();
-                    }
-                    AE2CraftingLens.LOGGER.info("Screen fields: {}", screenFieldNames);
-
-                    for (java.lang.reflect.Field f : screen.getClass().getDeclaredFields()) {
-                        f.setAccessible(true);
-                        try {
-                            Object val = f.get(screen);
-                            if (val != null) {
-                                String typeName = val.getClass().getName();
-                                if (typeName.contains("Table") || typeName.contains("List") || typeName.contains("Renderer")) {
-                                    AE2CraftingLens.LOGGER.info("Screen field '{}' type: {}", f.getName(), typeName);
-
-                                    if (typeName.contains("CraftingStatusTableRenderer") || typeName.contains("TableRenderer")) {
-                                        AE2CraftingLens.LOGGER.info("Found tableRenderer, exploring...");
-                                        
-                                        for (java.lang.reflect.Field tf : val.getClass().getDeclaredFields()) {
-                                            tf.setAccessible(true);
-                                            try {
-                                                Object tfVal = tf.get(val);
-                                                if (tfVal != null) {
-                                                    String tfTypeName = tfVal.getClass().getName();
-                                                    AE2CraftingLens.LOGGER.info("  tableRenderer field '{}' type: {}", tf.getName(), tfTypeName);
-
-                                                    if (tfVal instanceof java.util.List) {
-                                                        java.util.List<?> list = (java.util.List<?>) tfVal;
-                                                        AE2CraftingLens.LOGGER.info("    List size: {}", list.size());
-                                                        if (rowIndex >= 0 && rowIndex < list.size()) {
-                                                            Object item = list.get(rowIndex);
-                                                            if (item != null) {
-                                                                AE2CraftingLens.LOGGER.info("    Item at {}: {}", rowIndex, item.getClass().getName());
-                                                                AEKey key = extractAEKeyFromObject(item, rowIndex);
-                                                                if (key != null) return key;
-                                                            }
-                                                        }
-                                                    } else if (tfVal instanceof Object[]) {
-                                                        Object[] arr = (Object[]) tfVal;
-                                                        AE2CraftingLens.LOGGER.info("    Array length: {}", arr.length);
-                                                        if (rowIndex >= 0 && rowIndex < arr.length) {
-                                                            Object item = arr[rowIndex];
-                                                            if (item != null) {
-                                                                AE2CraftingLens.LOGGER.info("    Item at {}: {}", rowIndex, item.getClass().getName());
-                                                                AEKey key = extractAEKeyFromObject(item, rowIndex);
-                                                                if (key != null) return key;
-                                                            }
-                                                        }
-                                                    }
+                    } else if (table instanceof List) {
+                        List<?> list = (List<?>) table;
+                        AE2CraftingLens.LOGGER.info("Table list size: {}", list.size());
+                        if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
+                            AE2CraftingLens.LOGGER.info("Table item at row {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
+                            AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
+                            if (key != null) return key;
+                        }
+                    } else {
+                        AE2CraftingLens.LOGGER.info("Table is not array or list, trying to extract 'status' field from: {}", tableClassName);
+                        
+                        // AE2 1.20.1 structure: Renderer -> status (CraftingJobStatus) -> entries (List<CraftingStatusEntry>) -> what (AEKey)
+                        status = getFieldValueWithSrg(table, "status", "f_96541_");
+                        if (status != null) {
+                            AE2CraftingLens.LOGGER.info("Found 'status' field in table, type: {}", status.getClass().getName());
+                            
+                            // Try to get 'entries' from status
+                            Object entriesObj = getFieldValueWithSrg(status, "entries", "f_38840_");
+                            if (entriesObj instanceof List) {
+                                List<?> entries = (List<?>) entriesObj;
+                                AE2CraftingLens.LOGGER.info("Found 'entries' list in status with size: {}", entries.size());
+                                
+                                if (rowIndex >= 0 && rowIndex < entries.size() && entries.get(rowIndex) != null) {
+                                    Object entry = entries.get(rowIndex);
+                                    AE2CraftingLens.LOGGER.info("Found entry at index {}: {}", rowIndex, entry.getClass().getName());
+                                    
+                                    // Try to get 'what' field from entry
+                                    Object whatObj = getFieldValueWithSrg(entry, "what", "f_38839_");
+                                    if (whatObj instanceof AEKey) {
+                                        AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from status.entries[{}].what: {} ===", rowIndex, whatObj);
+                                        return (AEKey) whatObj;
+                                    }
+                                }
+                            } else {
+                                AE2CraftingLens.LOGGER.info("'entries' not found in status, scanning all fields...");
+                                for (java.lang.reflect.Field f : status.getClass().getDeclaredFields()) {
+                                    f.setAccessible(true);
+                                    try {
+                                        Object fieldValue = f.get(status);
+                                        if (fieldValue instanceof List) {
+                                            List<?> list = (List<?>) fieldValue;
+                                            AE2CraftingLens.LOGGER.info("  Found List in status.{} with size: {}", f.getName(), list.size());
+                                            if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
+                                                Object entry = list.get(rowIndex);
+                                                AE2CraftingLens.LOGGER.info("  Found entry at index {}: {}", rowIndex, entry.getClass().getName());
+                                                AEKey key = extractAEKeyFromObject(entry, rowIndex);
+                                                if (key != null) {
+                                                    AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from status.{}[{}]: {} ===", f.getName(), rowIndex, key);
+                                                    return key;
                                                 }
-                                            } catch (Exception e) {
+                                            }
+                                        }
+                                    } catch (Exception e) {
+                                        AE2CraftingLens.LOGGER.debug("  Error accessing field '{}': {}", f.getName(), e.getMessage());
+                                    }
+                                }
+                            }
+                        } else {
+                            AE2CraftingLens.LOGGER.info("'status' field not found in table, printing ALL fields for debugging...");
+                            
+                            // Print ALL fields with their types
+                            java.lang.reflect.Field[] allFields = table.getClass().getDeclaredFields();
+                            AE2CraftingLens.LOGGER.info("  Total fields in {}: {}", table.getClass().getName(), allFields.length);
+                            
+                            for (java.lang.reflect.Field f : allFields) {
+                                try {
+                                    f.setAccessible(true);
+                                    Object fieldValue = f.get(table);
+                                    String fieldTypeName = fieldValue != null ? fieldValue.getClass().getName() : "null";
+                                    String fieldName = f.getName();
+                                    AE2CraftingLens.LOGGER.info("  Field '{}' : type = {}", fieldName, fieldTypeName);
+                                    
+                                    // Check if field type contains "Status" or "Entry"
+                                    if (fieldTypeName.contains("Status") || fieldTypeName.contains("Entry") || fieldTypeName.contains("List")) {
+                                        AE2CraftingLens.LOGGER.info("    ^^^ POTENTIAL DATA FIELD ^^^");
+                                    }
+                                } catch (Exception e) {
+                                    AE2CraftingLens.LOGGER.info("  Field '{}' : error = {}", f.getName(), e.getMessage());
+                                }
+                            }
+                        }
+                        
+                        // Fallback: scan all fields
+                        for (java.lang.reflect.Field f : table.getClass().getDeclaredFields()) {
+                            try {
+                                f.setAccessible(true);
+                                Object fieldValue = f.get(table);
+                                String fieldTypeName = fieldValue != null ? fieldValue.getClass().getName() : "null";
+                                AE2CraftingLens.LOGGER.info("  Table field '{}' type: {}", f.getName(), fieldTypeName);
+                                
+                                if (fieldValue != null) {
+                                    if (fieldValue instanceof List) {
+                                        List<?> list = (List<?>) fieldValue;
+                                        AE2CraftingLens.LOGGER.info("  Found List in table.{} with size: {}", f.getName(), list.size());
+                                        if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
+                                            AE2CraftingLens.LOGGER.info("  Found item at index {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
+                                            AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
+                                            if (key != null) {
+                                                AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from table.{}[{}]: {} ===", f.getName(), rowIndex, key);
+                                                return key;
+                                            }
+                                        }
+                                    } else if (fieldValue instanceof Object[]) {
+                                        Object[] array = (Object[]) fieldValue;
+                                        AE2CraftingLens.LOGGER.info("  Found array in table.{} with length: {}", f.getName(), array.length);
+                                        if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
+                                            AE2CraftingLens.LOGGER.info("  Found item at index {}: {}", rowIndex, array[rowIndex].getClass().getName());
+                                            AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
+                                            if (key != null) {
+                                                AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from table.{}[{}]: {} ===", f.getName(), rowIndex, key);
+                                                return key;
                                             }
                                         }
                                     }
                                 }
+                            } catch (Exception e) {
+                                AE2CraftingLens.LOGGER.debug("  Error accessing field '{}': {}", f.getName(), e.getMessage());
                             }
-                        } catch (Exception e) {
                         }
                     }
                 }
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error accessing screen: {}", e.getMessage());
+            } else {
+                AE2CraftingLens.LOGGER.info("Could not find 'table' field in screen class hierarchy");
             }
-
         } catch (Exception e) {
-            AE2CraftingLens.LOGGER.debug("Error extracting AEKey from table: {}", e.getMessage());
+            AE2CraftingLens.LOGGER.info("Error extracting AEKey from table: {}", e.getMessage());
+            e.printStackTrace();
         }
 
         return null;
@@ -683,12 +536,27 @@ public class CraftingScreenHandler {
             String className = obj.getClass().getName();
             AE2CraftingLens.LOGGER.info("Extracting AEKey from object: {}", className);
 
+            // Special handling for CraftingStatusEntry - direct 'what' field access
+            if (className.contains("CraftingStatusEntry")) {
+                AE2CraftingLens.LOGGER.info("Object is CraftingStatusEntry, trying 'what' field directly");
+                try {
+                    java.lang.reflect.Field whatField = obj.getClass().getDeclaredField("what");
+                    whatField.setAccessible(true);
+                    Object aeKey = whatField.get(obj);
+                    if (aeKey != null) {
+                        AE2CraftingLens.LOGGER.info("=== EXTRACTED AEKey from CraftingStatusEntry.what at row {}: {} ===", rowIndex, aeKey);
+                        return (AEKey) aeKey;
+                    }
+                } catch (Exception e) {
+                    AE2CraftingLens.LOGGER.info("Failed to get 'what' field from CraftingStatusEntry: {}", e.getMessage());
+                }
+            }
+
             try {
                 java.lang.reflect.Method whatMethod = obj.getClass().getMethod("what");
                 Object aeKey = whatMethod.invoke(obj);
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("=== EXTRACTED AEKey via what() at row {}: {} ===", rowIndex, aeKey);
-                    AE2CraftingLens.LOGGER.info("This is the item YOU CLICKED in the crafting status list");
                     return (AEKey) aeKey;
                 }
             } catch (Exception e) {
@@ -699,7 +567,6 @@ public class CraftingScreenHandler {
                 Object aeKey = getKeyMethod.invoke(obj);
                 if (aeKey != null) {
                     AE2CraftingLens.LOGGER.info("=== EXTRACTED AEKey via getKey() at row {}: {} ===", rowIndex, aeKey);
-                    AE2CraftingLens.LOGGER.info("This is the item YOU CLICKED in the crafting status list");
                     return (AEKey) aeKey;
                 }
             } catch (Exception e) {
@@ -908,6 +775,31 @@ public class CraftingScreenHandler {
                 clazz = clazz.getSuperclass();
             }
         }
+        return null;
+    }
+    
+    private Object getFieldValueWithSrg(Object obj, String mappedName, String srgName) {
+        if (obj == null) return null;
+        
+        java.lang.reflect.Field field = null;
+        
+        // Try mapped name first
+        field = findFieldInHierarchy(obj.getClass(), mappedName);
+        
+        // Try SRG name if mapped name not found
+        if (field == null && srgName != null) {
+            field = findFieldInHierarchy(obj.getClass(), srgName);
+        }
+        
+        if (field != null) {
+            try {
+                field.setAccessible(true);
+                return field.get(obj);
+            } catch (Exception e) {
+                AE2CraftingLens.LOGGER.debug("Error getting field '{}' from {}: {}", mappedName, obj.getClass().getName(), e.getMessage());
+            }
+        }
+        
         return null;
     }
 }
