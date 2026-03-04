@@ -517,7 +517,12 @@ public class PatternProviderRequestHandler {
                 
                 if (job != null) {
                     try {
-                        Field tasksField = job.getClass().getDeclaredField("tasks");
+                        Field tasksField = null;
+                        try {
+                            tasksField = job.getClass().getDeclaredField("tasks");
+                        } catch (NoSuchFieldException e) {
+                            tasksField = job.getClass().getDeclaredField("f_150389_");
+                        }
                         tasksField.setAccessible(true);
                         Object tasks = tasksField.get(job);
                         
@@ -526,31 +531,10 @@ public class PatternProviderRequestHandler {
                             
                             AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: tasksMap size: {}, rowIndex: {}, targetKey: {}", tasksMap.size(), rowIndex, targetKey);
                             
-                            if (rowIndex >= 0 && rowIndex < tasksMap.size() && targetKey != null) {
-                                int currentIndex = 0;
-                                Object patternAtRowIndex = null;
-                                for (java.util.Map.Entry<?, ?> entry : tasksMap.entrySet()) {
-                                    if (currentIndex == rowIndex) {
-                                        patternAtRowIndex = entry.getKey();
-                                        break;
-                                    }
-                                    currentIndex++;
-                                }
+                            if (targetKey != null) {
+                                AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Searching for patterns producing {} (hint rowIndex: {})", targetKey, rowIndex);
                                 
-                                if (patternAtRowIndex != null) {
-                                    if (isPatternOutputsItem(patternAtRowIndex, targetKey)) {
-                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Pattern at rowIndex {} outputs targetKey: {}", rowIndex, targetKey);
-                                        relevantPatterns.add(patternAtRowIndex);
-                                    } else if (isPatternInputsItem(patternAtRowIndex, targetKey)) {
-                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Pattern at rowIndex {} uses targetKey as input: {}", rowIndex, targetKey);
-                                        relevantPatterns.add(patternAtRowIndex);
-                                    } else {
-                                        AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: Pattern at rowIndex {} is NOT related to targetKey {}, this indicates rowIndex mismatch", rowIndex, targetKey);
-                                    }
-                                }
-                            } else if (targetKey != null) {
-                                AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: rowIndex invalid ({}), using targetKey to match outputs only", rowIndex);
-                                
+                                // 1. Try to find the pattern by looking at all tasks
                                 for (java.util.Map.Entry<?, ?> entry : tasksMap.entrySet()) {
                                     Object pattern = entry.getKey();
                                     if (pattern != null && isPatternOutputsItem(pattern, targetKey)) {
@@ -559,8 +543,9 @@ public class PatternProviderRequestHandler {
                                     }
                                 }
                                 
+                                // 2. If no producer found, try to find patterns where it's an input (consumer)
                                 if (relevantPatterns.isEmpty()) {
-                                    AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: No pattern outputs targetKey, checking for inputs");
+                                    AE2CraftingLens.LOGGER.info("findProvidersFromClusterForTarget: No producer found, searching for consumers of {}", targetKey);
                                     for (java.util.Map.Entry<?, ?> entry : tasksMap.entrySet()) {
                                         Object pattern = entry.getKey();
                                         if (pattern != null && isPatternInputsItem(pattern, targetKey)) {
@@ -758,8 +743,12 @@ public class PatternProviderRequestHandler {
                 }
             }
             
-            Set<ProviderLocation> inputProviders = findProvidersConsumingKey(grid, craftingService, targetKey, defaultLevel);
-            positions.addAll(inputProviders);
+            // Only search for consumers if we didn't find any producers
+            if (positions.isEmpty()) {
+                AE2CraftingLens.LOGGER.info("findPatternProvidersForKey: No producers found for {}, searching for consumers", targetKey);
+                Set<ProviderLocation> inputProviders = findProvidersConsumingKey(grid, craftingService, targetKey, defaultLevel);
+                positions.addAll(inputProviders);
+            }
             
             AE2CraftingLens.LOGGER.info("findPatternProvidersForKey: Found {} providers for key {}", positions.size(), targetKey);
             

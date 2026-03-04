@@ -14,10 +14,8 @@ import java.util.List;
 import java.util.Set;
 
 public class CraftingScreenHandler {
-
     private AEKey lastClickedAEKey = null;
-    private int lastClickedRowIndex = -1;
-    
+
     public CraftingScreenHandler() {
         if (AE2CraftingLens.isDebugLoggingEnabled()) {
             AE2CraftingLens.LOGGER.info("CraftingScreenHandler instance created");
@@ -29,7 +27,6 @@ public class CraftingScreenHandler {
         if (AE2CraftingLens.isDebugLoggingEnabled()) {
             AE2CraftingLens.LOGGER.info("=== AE2 Crafting Lens: Mouse click event received ===");
         }
-        lastClickedAEKey = null;
         
         Object screen = event.getScreen();
         if (screen == null) {
@@ -46,8 +43,9 @@ public class CraftingScreenHandler {
         
         boolean isCraftingStatusScreen = screenClassName.contains("CraftingStatusScreen");
         boolean isWCTScreen = screenClassName.contains("WCTScreen") && screenClassName.contains("ae2wtlib");
+        boolean isTerminalScreen = screenClassName.contains("TerminalScreen");
         
-        if (!isCraftingStatusScreen && !isWCTScreen) {
+        if (!isCraftingStatusScreen && !isWCTScreen && !isTerminalScreen) {
             if (AE2CraftingLens.isDebugLoggingEnabled()) {
                 AE2CraftingLens.LOGGER.info("Not a CraftingStatusScreen or WCTScreen, skipping");
             }
@@ -118,39 +116,307 @@ public class CraftingScreenHandler {
         }
         
         try {
-            int rowIndex = lastClickedRowIndex;
-            lastClickedRowIndex = -1;
+            int finalIndex = -1;
+            int guiLeft = getGuiLeft(screen);
+            int guiTop = getGuiTop(screen);
+            double mouseX = event.getMouseX();
+            double mouseY = event.getMouseY();
+            double relX = mouseX - guiLeft;
+            double relY = mouseY - guiTop;
 
-            AEKey aeKey = extractAEKeyFromTable(rowIndex);
+            boolean isGridMode = isGridMode(screen);
+            
+            // Log raw field value for debugging
+            Object rawGridMode = getFieldValueWithSrg(screen, "gridMode", "f_96540_");
+            AE2CraftingLens.LOGGER.info("Screen: {}, isGridMode raw value: {} (type: {})", screenClassName, rawGridMode, rawGridMode != null ? rawGridMode.getClass().getName() : "null");
 
-            if (aeKey == null) {
-                aeKey = lastClickedAEKey;
-                if (aeKey != null) {
-                    AE2CraftingLens.LOGGER.info("Using UI-extracted AEKey: {}", aeKey);
-                }
-            }
-
-            if (aeKey == null) {
-                AE2CraftingLens.LOGGER.info("No AEKey from table, sending null to let server use rowIndex {} to find pattern", rowIndex);
+            int tableStartX, tableStartY, tableWidth, tableHeight;
+            
+            if (isCraftingStatusScreen) {
+                tableStartX = 9;
+                tableStartY = 19;
+                tableWidth = 204;
+                tableHeight = isGridMode ? 108 : 115;
+            } else if (isWCTScreen) {
+                tableStartX = 57;
+                tableStartY = 9;
+                tableWidth = 152;
+                tableHeight = isGridMode ? 108 : 90;
+            } else if (isTerminalScreen) {
+                tableStartX = 170;
+                tableStartY = 19;
+                tableWidth = 204;
+                tableHeight = isGridMode ? 108 : 115;
             } else {
-                AE2CraftingLens.LOGGER.info("Sending AEKey to server: {}, rowIndex: {}", aeKey, rowIndex);
+                tableStartX = 70;
+                tableStartY = 29;
+                tableWidth = 130;
+                tableHeight = isGridMode ? 108 : 90;
             }
 
-            RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey, rowIndex);
+            int rowHeight = isGridMode ? 18 : 23;
+            int columns = getColumns(screen, isGridMode, tableWidth);
+            
+            int clickedRow = (int) Math.floor((relY - tableStartY) / rowHeight);
+            int clickedCol = isGridMode ? (int) Math.floor((relX - tableStartX) / (tableWidth / (double) columns)) : 0;
+            
+            int scrollOffset = getScrollOffset(screen, isGridMode);
+            finalIndex = (clickedRow + scrollOffset) * columns + clickedCol;
+
+            AE2CraftingLens.LOGGER.info("Click Debug: mouse=({}, {}), gui=({}, {}), rel=({}, {}), isGrid={}, tableStart=({}, {}), rowH={}, cols={}, clickedRow={}, clickedCol={}, scroll={}, finalIndex={}", 
+                    mouseX, mouseY, guiLeft, guiTop, relX, relY, isGridMode, tableStartX, tableStartY, rowHeight, columns, clickedRow, clickedCol, scrollOffset, finalIndex);
+
+            AEKey aeKey = getHoveredAEKey(screen, finalIndex);
+
+            // Diagnostic: Log nearby items to understand grid layout
+            try {
+                Object status = getFieldValueWithSrg(screen, "status", "f_96541_");
+                if (status != null) {
+                    Object entriesObj = getFieldValueWithSrg(status, "entries", "f_38840_");
+                    if (entriesObj instanceof List) {
+                        List<?> entries = (List<?>) entriesObj;
+                        AE2CraftingLens.LOGGER.info("Diagnostic: Total entries: {}", entries.size());
+                        for (int i = 0; i < Math.min(entries.size(), 22); i++) {
+                            AEKey key = extractAEKeyFromEntry(entries.get(i));
+                            AE2CraftingLens.LOGGER.info("Diagnostic: Index {}: {}", i, key);
+                        }
+                    }
+                }
+            } catch (Exception e) {}
+
+            if (aeKey == null) {
+                AE2CraftingLens.LOGGER.info("No AEKey from hover detection, skipping");
+                return;
+            }
+
+            AE2CraftingLens.LOGGER.info("Sending AEKey to server: {} (finalIndex: {}, row: {}, col: {}, isGrid: {})", 
+                    aeKey, finalIndex, clickedRow + scrollOffset, clickedCol, isGridMode);
+
+            RequestPatternProvidersPacket packet = new RequestPatternProvidersPacket(aeKey, finalIndex);
             if (AE2CraftingLens.isDebugLoggingEnabled()) {
-                AE2CraftingLens.LOGGER.info("Sending RequestPatternProvidersPacket with AEKey: {}, rowIndex: {}", aeKey, rowIndex);
+                AE2CraftingLens.LOGGER.info("Sending RequestPatternProvidersPacket with AEKey: {} and finalIndex: {}", aeKey, finalIndex);
             }
             NetworkHandler.CHANNEL.sendToServer(packet);
             if (AE2CraftingLens.isDebugLoggingEnabled()) {
                 AE2CraftingLens.LOGGER.info("Packet sent successfully to server");
             }
-            lastClickedAEKey = null;
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.error("Error handling mouse click", e);
         }
         if (AE2CraftingLens.isDebugLoggingEnabled()) {
             AE2CraftingLens.LOGGER.info("=== AE2 Crafting Lens: Mouse click event processed ===");
         }
+    }
+    
+    private AEKey getHoveredAEKey(Object screen, int finalIndex) {
+        try {
+            // 1. Primary path: try to extract from 'table' field
+            AEKey keyFromTable = extractAEKeyFromTable(screen, finalIndex);
+            if (keyFromTable != null) {
+                this.lastClickedAEKey = keyFromTable;
+                return keyFromTable;
+            }
+
+            // 2. Secondary path: try to extract from 'status.entries'
+            Object status = getFieldValueWithSrg(screen, "status", "f_96541_");
+            if (status == null) {
+                status = findFieldByType(screen, "appeng.me.cluster.implementations.CraftingJobStatus");
+            }
+            if (status != null) {
+                Object entriesObj = getFieldValueWithSrg(status, "entries", "f_38840_");
+                if (entriesObj == null) {
+                    entriesObj = findFieldByType(status, "java.util.List");
+                }
+                if (entriesObj instanceof List) {
+                    List<?> entries = (List<?>) entriesObj;
+                    if (finalIndex >= 0 && finalIndex < entries.size()) {
+                        Object entry = entries.get(finalIndex);
+                        AEKey key = extractAEKeyFromEntry(entry);
+                        if (key != null) {
+                            this.lastClickedAEKey = key;
+                            return key;
+                        }
+                    }
+                }
+            }
+
+            // 3. Final fallback: ONLY return lastClickedAEKey if we have one
+            return this.lastClickedAEKey;
+            
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.error("getHoveredAEKey error: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private int getColumns(Object screen, boolean isGridMode, int tableWidth) {
+        if (!isGridMode) return 1;
+        
+        // Check for WCT side panel
+        String className = screen.getClass().getName();
+        if (className.contains("WCT") || className.contains("ae2wtlib")) {
+            if (tableWidth < 100) return 3;
+        }
+        
+        // Standard AE2 grid is 11 columns
+        if (tableWidth >= 190) return 11;
+        
+        // Dynamic detection for other widths
+        if (tableWidth < 60) return 3;
+        if (tableWidth < 100) return 5;
+        
+        return 11;
+    }
+
+    private boolean isGridMode(Object screen) {
+        // Try common names in hierarchy with type check
+        String[] possibleNames = {"gridMode", "f_96540_", "isGridMode", "grid"};
+        for (String name : possibleNames) {
+            try {
+                java.lang.reflect.Field field = findFieldInHierarchy(screen.getClass(), name);
+                if (field != null && (field.getType() == boolean.class || field.getType() == Boolean.class)) {
+                    field.setAccessible(true);
+                    return (boolean) field.get(screen);
+                }
+            } catch (Exception e) {}
+        }
+
+        // Try searching all boolean fields in hierarchy
+        try {
+            Class<?> clazz = screen.getClass();
+            while (clazz != null && !clazz.equals(Object.class)) {
+                for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
+                    if (f.getType() == boolean.class || f.getType() == Boolean.class) {
+                        f.setAccessible(true);
+                        String name = f.getName();
+                        Object val = f.get(screen);
+                        AE2CraftingLens.LOGGER.debug("Checking boolean field: {} = {}", name, val);
+                        if (name.toLowerCase().contains("grid") && val instanceof Boolean) {
+                            return (boolean) val;
+                        }
+                    }
+                }
+                clazz = clazz.getSuperclass();
+            }
+        } catch (Exception e) {}
+
+        // Fallback: Check table size if possible
+        try {
+            Object status = getFieldValueWithSrg(screen, "status", "f_96541_");
+            if (status != null) {
+                Object entriesObj = getFieldValueWithSrg(status, "entries", "f_38840_");
+                if (entriesObj instanceof java.util.Collection) {
+                    int size = ((java.util.Collection<?>) entriesObj).size();
+                    if (size > 5) {
+                        // In list mode, usually only 5 items are visible, but the list can be longer.
+                        // However, if we see many items, it's more likely to be a grid if we can't find the flag.
+                        // But this is risky. Let's look at the scrollbar.
+                        Object scrollbar = getFieldValueWithSrg(screen, "scrollbar", "f_96537_");
+                        if (scrollbar != null) {
+                            // If there are many items but no scrollbar, it MUST be a grid.
+                            // Or if the scrollbar is very small.
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {}
+
+        return false;
+    }
+
+    private AEKey extractAEKeyFromTable(Object screen, int index) {
+        try {
+            Object table = getFieldValueWithSrg(screen, "table", "f_96542_");
+            if (table != null) {
+                if (table.getClass().isArray()) {
+                    Object[] tableArray = (Object[]) table;
+                    if (index >= 0 && index < tableArray.length) {
+                        Object entry = tableArray[index];
+                        return extractAEKeyFromEntry(entry);
+                    }
+                } else if (table instanceof List) {
+                    List<?> tableList = (List<?>) table;
+                    if (index >= 0 && index < tableList.size()) {
+                        Object entry = tableList.get(index);
+                        return extractAEKeyFromEntry(entry);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            AE2CraftingLens.LOGGER.debug("Error extracting from table: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private AEKey extractAEKeyFromEntry(Object entry) {
+        if (entry == null) return null;
+        try {
+            Object whatObj = getFieldValueWithSrg(entry, "what", "f_38839_");
+            if (whatObj instanceof AEKey) {
+                return (AEKey) whatObj;
+            }
+            // Try field finding by type
+            whatObj = findFieldByType(entry, "appeng.api.stacks.AEKey");
+            if (whatObj instanceof AEKey) {
+                return (AEKey) whatObj;
+            }
+            // Try method what()
+            java.lang.reflect.Method whatMethod = entry.getClass().getMethod("what");
+            Object result = whatMethod.invoke(entry);
+            if (result instanceof AEKey) {
+                return (AEKey) result;
+            }
+        } catch (Exception e) {}
+        return null;
+    }
+
+    private Object findFieldByType(Object obj, String typeName) {
+        if (obj == null) return null;
+        Class<?> clazz = obj.getClass();
+        while (clazz != null && !clazz.equals(Object.class)) {
+            for (java.lang.reflect.Field field : clazz.getDeclaredFields()) {
+                if (field.getType().getName().equals(typeName)) {
+                    try {
+                        field.setAccessible(true);
+                        return field.get(obj);
+                    } catch (Exception e) {}
+                }
+                // Also check if the type is a subclass of typeName
+                try {
+                    Class<?> targetClass = Class.forName(typeName);
+                    if (targetClass.isAssignableFrom(field.getType())) {
+                        field.setAccessible(true);
+                        return field.get(obj);
+                    }
+                } catch (Exception e) {}
+            }
+            clazz = clazz.getSuperclass();
+        }
+        return null;
+    }
+    
+    private int getGuiLeft(Object screen) {
+        try {
+            return (int) screen.getClass().getMethod("getGuiLeft").invoke(screen);
+        } catch (Exception e) {
+            Object value = getFieldValueWithSrg(screen, "leftPos", "f_97734_");
+            if (value instanceof Integer) {
+                return (Integer) value;
+            }
+        }
+        return 0;
+    }
+    
+    private int getGuiTop(Object screen) {
+        try {
+            return (int) screen.getClass().getMethod("getGuiTop").invoke(screen);
+        } catch (Exception e) {
+            Object value = getFieldValueWithSrg(screen, "topPos", "f_97735_");
+            if (value instanceof Integer) {
+                return (Integer) value;
+            }
+        }
+        return 0;
     }
     
     private boolean isClickOnButton(ScreenEvent.MouseButtonPressed.Pre event) {
@@ -216,423 +482,50 @@ public class CraftingScreenHandler {
         return false;
     }
     
-    private AEKey extractAEKeyFromSlot(Object slot) {
+    private int getScrollOffset(Object screen, boolean isGridMode) {
         try {
-            try {
-                java.lang.reflect.Method getStackMethod = slot.getClass().getMethod("getStack");
-                Object stack = getStackMethod.invoke(slot);
-                if (stack != null) {
-                    java.lang.reflect.Method whatMethod = stack.getClass().getMethod("what");
-                    Object aeKey = whatMethod.invoke(stack);
-                    if (aeKey != null) {
-                        AE2CraftingLens.LOGGER.info("Extracted AEKey from GenericStack: {}", aeKey);
-                        return (AEKey) aeKey;
-                    }
-                }
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error extracting AEKey via GenericStack: {}", e.getMessage());
-            }
+            Object status = getFieldValueWithSrg(screen, "status", "f_96541_");
+            Object scrollbar = getFieldValueWithSrg(screen, "scrollbar", "f_96537_");
             
-            try {
-                java.lang.reflect.Method getAEKeyMethod = slot.getClass().getMethod("getAEKey");
-                Object aeKey = getAEKeyMethod.invoke(slot);
-                if (aeKey != null) {
-                    AE2CraftingLens.LOGGER.info("Extracted AEKey via getAEKey method: {}", aeKey);
-                    return (AEKey) aeKey;
-                }
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error extracting AEKey via getAEKey: {}", e.getMessage());
-            }
-            
-            try {
-                java.lang.reflect.Field whatField = slot.getClass().getDeclaredField("what");
-                whatField.setAccessible(true);
-                Object aeKey = whatField.get(slot);
-                if (aeKey != null) {
-                    AE2CraftingLens.LOGGER.info("Extracted AEKey via what field: {}", aeKey);
-                    return (AEKey) aeKey;
-                }
-            } catch (Exception e) {
-                AE2CraftingLens.LOGGER.debug("Error extracting AEKey via what field: {}", e.getMessage());
-            }
-        } catch (Exception e) {
-            AE2CraftingLens.LOGGER.debug("Error in extractAEKeyFromSlot: {}", e.getMessage());
-        }
-        return null;
-    }
-
-    private AEKey extractAEKeyFromTable(int rowIndex) {
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc == null || mc.player == null) {
-                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: mc or player is null");
-                return null;
-            }
-
-            Object menu = mc.player.containerMenu;
-            if (menu == null) {
-                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: menu is null");
-                return null;
-            }
-
-            String menuClassName = menu.getClass().getName();
-            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: menu class: {}, rowIndex: {}", menuClassName, rowIndex);
-            
-            if (!menuClassName.contains("CraftingStatusMenu")) {
-                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: menu is not CraftingStatusMenu");
-                return null;
-            }
-
-            Object screen = mc.screen;
-            if (screen == null) {
-                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: screen is null");
-                return null;
-            }
-            
-            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: screen class: {}", screen.getClass().getName());
-
-            // AE2 1.20.1: Search for CraftingJobStatus type field directly in Screen class
-            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Searching for CraftingJobStatus type field in screen...");
-            Object status = null;
-            
-            for (java.lang.reflect.Field f : screen.getClass().getDeclaredFields()) {
-                String fieldTypeName = f.getType().getName();
-                if (fieldTypeName.contains("CraftingJobStatus")) {
-                    AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Found CraftingJobStatus field '{}' type: {}", f.getName(), fieldTypeName);
-                    f.setAccessible(true);
-                    try {
-                        status = f.get(screen);
-                        if (status != null) {
-                            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Got status object from field '{}'", f.getName());
-                            break;
-                        }
-                    } catch (Exception e) {
-                        AE2CraftingLens.LOGGER.debug("Error getting status from field '{}': {}", f.getName(), e.getMessage());
-                    }
-                }
-            }
-            
-            // If not found in screen, try in menu
-            if (status == null) {
-                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: CraftingJobStatus not found in screen, trying menu...");
-                try {
-                    java.lang.reflect.Method getMenuMethod = screen.getClass().getMethod("getMenu");
-                    Object menuObj = getMenuMethod.invoke(screen);
-                    if (menuObj != null) {
-                        for (java.lang.reflect.Field f : menuObj.getClass().getDeclaredFields()) {
-                            String fieldTypeName = f.getType().getName();
-                            if (fieldTypeName.contains("CraftingJobStatus")) {
-                                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Found CraftingJobStatus in menu field '{}' type: {}", f.getName(), fieldTypeName);
-                                f.setAccessible(true);
-                                status = f.get(menuObj);
-                                if (status != null) {
-                                    AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Got status object from menu field '{}'", f.getName());
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.debug("Error getting menu: {}", e.getMessage());
-                }
-            }
-            
-            // If status found, extract entries
-            if (status != null) {
-                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Status found, searching for entries list...");
+            if (status != null && scrollbar != null) {
+                Object entriesObj = getFieldValueWithSrg(status, "entries", "f_38840_");
+                Object currentScrollObj = getFieldValueWithSrg(scrollbar, "currentScroll", "f_96539_");
                 
-                for (java.lang.reflect.Field f : status.getClass().getDeclaredFields()) {
-                    f.setAccessible(true);
-                    try {
-                        Object fieldValue = f.get(status);
-                        if (fieldValue instanceof List) {
-                            List<?> entries = (List<?>) fieldValue;
-                            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Found List in status.{} with size: {}", f.getName(), entries.size());
-                            
-                            if (rowIndex >= 0 && rowIndex < entries.size() && entries.get(rowIndex) != null) {
-                                Object entry = entries.get(rowIndex);
-                                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Found entry at index {}: {}", rowIndex, entry.getClass().getName());
-                                
-                                // Try to get 'what' field from entry
-                                Object whatObj = getFieldValueWithSrg(entry, "what", "f_38839_");
-                                if (whatObj instanceof AEKey) {
-                                    AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from status.entries[{}].what: {} ===", rowIndex, whatObj);
-                                    return (AEKey) whatObj;
-                                }
-                                
-                                // Fallback: try other methods
-                                AEKey key = extractAEKeyFromObject(entry, rowIndex);
-                                if (key != null) {
-                                    return key;
-                                }
-                            }
-                        }
-                    } catch (Exception e) {
-                        AE2CraftingLens.LOGGER.debug("Error accessing field '{}': {}", f.getName(), e.getMessage());
+                if (entriesObj instanceof List && currentScrollObj != null) {
+                    List<?> entries = (List<?>) entriesObj;
+                    float currentScroll = 0;
+                    if (currentScrollObj instanceof Float) {
+                        currentScroll = (Float) currentScrollObj;
+                    } else if (currentScrollObj instanceof Double) {
+                        currentScroll = ((Double) currentScrollObj).floatValue();
                     }
-                }
-            } else {
-                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: CraftingJobStatus not found, trying table field...");
-            }
-
-            java.lang.reflect.Field tableField = findFieldInHierarchy(screen.getClass(), "table");
-            AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: tableField found: {}", tableField != null);
-            
-            if (tableField != null) {
-                tableField.setAccessible(true);
-                Object table = tableField.get(screen);
-
-                AE2CraftingLens.LOGGER.info("extractAEKeyFromTable: Got 'table' field, type: {}", 
-                    table != null ? table.getClass().getName() : "null");
-                
-                if (table != null) {
-                    String tableClassName = table.getClass().getName();
-                    AE2CraftingLens.LOGGER.info("Table class: {}", tableClassName);
-
-                    if (table instanceof Object[]) {
-                        Object[] array = (Object[]) table;
-                        AE2CraftingLens.LOGGER.info("Table array length: {}", array.length);
-                        if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
-                            AE2CraftingLens.LOGGER.info("Table item at row {}: {}", rowIndex, array[rowIndex].getClass().getName());
-                            AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
-                            if (key != null) return key;
-                        }
-                    } else if (table instanceof List) {
-                        List<?> list = (List<?>) table;
-                        AE2CraftingLens.LOGGER.info("Table list size: {}", list.size());
-                        if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
-                            AE2CraftingLens.LOGGER.info("Table item at row {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
-                            AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
-                            if (key != null) return key;
-                        }
-                    } else {
-                        AE2CraftingLens.LOGGER.info("Table is not array or list, trying to extract 'status' field from: {}", tableClassName);
-                        
-                        // AE2 1.20.1 structure: Renderer -> status (CraftingJobStatus) -> entries (List<CraftingStatusEntry>) -> what (AEKey)
-                        status = getFieldValueWithSrg(table, "status", "f_96541_");
-                        if (status != null) {
-                            AE2CraftingLens.LOGGER.info("Found 'status' field in table, type: {}", status.getClass().getName());
-                            
-                            // Try to get 'entries' from status
-                            Object entriesObj = getFieldValueWithSrg(status, "entries", "f_38840_");
-                            if (entriesObj instanceof List) {
-                                List<?> entries = (List<?>) entriesObj;
-                                AE2CraftingLens.LOGGER.info("Found 'entries' list in status with size: {}", entries.size());
-                                
-                                if (rowIndex >= 0 && rowIndex < entries.size() && entries.get(rowIndex) != null) {
-                                    Object entry = entries.get(rowIndex);
-                                    AE2CraftingLens.LOGGER.info("Found entry at index {}: {}", rowIndex, entry.getClass().getName());
-                                    
-                                    // Try to get 'what' field from entry
-                                    Object whatObj = getFieldValueWithSrg(entry, "what", "f_38839_");
-                                    if (whatObj instanceof AEKey) {
-                                        AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from status.entries[{}].what: {} ===", rowIndex, whatObj);
-                                        return (AEKey) whatObj;
-                                    }
-                                }
-                            } else {
-                                AE2CraftingLens.LOGGER.info("'entries' not found in status, scanning all fields...");
-                                for (java.lang.reflect.Field f : status.getClass().getDeclaredFields()) {
-                                    f.setAccessible(true);
-                                    try {
-                                        Object fieldValue = f.get(status);
-                                        if (fieldValue instanceof List) {
-                                            List<?> list = (List<?>) fieldValue;
-                                            AE2CraftingLens.LOGGER.info("  Found List in status.{} with size: {}", f.getName(), list.size());
-                                            if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
-                                                Object entry = list.get(rowIndex);
-                                                AE2CraftingLens.LOGGER.info("  Found entry at index {}: {}", rowIndex, entry.getClass().getName());
-                                                AEKey key = extractAEKeyFromObject(entry, rowIndex);
-                                                if (key != null) {
-                                                    AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from status.{}[{}]: {} ===", f.getName(), rowIndex, key);
-                                                    return key;
-                                                }
-                                            }
-                                        }
-                                    } catch (Exception e) {
-                                        AE2CraftingLens.LOGGER.debug("  Error accessing field '{}': {}", f.getName(), e.getMessage());
-                                    }
-                                }
-                            }
-                        } else {
-                            AE2CraftingLens.LOGGER.info("'status' field not found in table, printing ALL fields for debugging...");
-                            
-                            // Print ALL fields with their types
-                            java.lang.reflect.Field[] allFields = table.getClass().getDeclaredFields();
-                            AE2CraftingLens.LOGGER.info("  Total fields in {}: {}", table.getClass().getName(), allFields.length);
-                            
-                            for (java.lang.reflect.Field f : allFields) {
-                                try {
-                                    f.setAccessible(true);
-                                    Object fieldValue = f.get(table);
-                                    String fieldTypeName = fieldValue != null ? fieldValue.getClass().getName() : "null";
-                                    String fieldName = f.getName();
-                                    AE2CraftingLens.LOGGER.info("  Field '{}' : type = {}", fieldName, fieldTypeName);
-                                    
-                                    // Check if field type contains "Status" or "Entry"
-                                    if (fieldTypeName.contains("Status") || fieldTypeName.contains("Entry") || fieldTypeName.contains("List")) {
-                                        AE2CraftingLens.LOGGER.info("    ^^^ POTENTIAL DATA FIELD ^^^");
-                                    }
-                                } catch (Exception e) {
-                                    AE2CraftingLens.LOGGER.info("  Field '{}' : error = {}", f.getName(), e.getMessage());
-                                }
-                            }
-                        }
-                        
-                        // Fallback: scan all fields
-                        for (java.lang.reflect.Field f : table.getClass().getDeclaredFields()) {
-                            try {
-                                f.setAccessible(true);
-                                Object fieldValue = f.get(table);
-                                String fieldTypeName = fieldValue != null ? fieldValue.getClass().getName() : "null";
-                                AE2CraftingLens.LOGGER.info("  Table field '{}' type: {}", f.getName(), fieldTypeName);
-                                
-                                if (fieldValue != null) {
-                                    if (fieldValue instanceof List) {
-                                        List<?> list = (List<?>) fieldValue;
-                                        AE2CraftingLens.LOGGER.info("  Found List in table.{} with size: {}", f.getName(), list.size());
-                                        if (rowIndex >= 0 && rowIndex < list.size() && list.get(rowIndex) != null) {
-                                            AE2CraftingLens.LOGGER.info("  Found item at index {}: {}", rowIndex, list.get(rowIndex).getClass().getName());
-                                            AEKey key = extractAEKeyFromObject(list.get(rowIndex), rowIndex);
-                                            if (key != null) {
-                                                AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from table.{}[{}]: {} ===", f.getName(), rowIndex, key);
-                                                return key;
-                                            }
-                                        }
-                                    } else if (fieldValue instanceof Object[]) {
-                                        Object[] array = (Object[]) fieldValue;
-                                        AE2CraftingLens.LOGGER.info("  Found array in table.{} with length: {}", f.getName(), array.length);
-                                        if (rowIndex >= 0 && rowIndex < array.length && array[rowIndex] != null) {
-                                            AE2CraftingLens.LOGGER.info("  Found item at index {}: {}", rowIndex, array[rowIndex].getClass().getName());
-                                            AEKey key = extractAEKeyFromObject(array[rowIndex], rowIndex);
-                                            if (key != null) {
-                                                AE2CraftingLens.LOGGER.info("=== SUCCESS: Extracted AEKey from table.{}[{}]: {} ===", f.getName(), rowIndex, key);
-                                                return key;
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch (Exception e) {
-                                AE2CraftingLens.LOGGER.debug("  Error accessing field '{}': {}", f.getName(), e.getMessage());
-                            }
-                        }
+                    
+                    int totalItems = entries.size();
+                    int columns = isGridMode ? 11 : 1;
+                    int totalRows = (int) Math.ceil(totalItems / (double) columns);
+                    int visibleRows = isGridMode ? 6 : 5;
+                    
+                    if (totalRows <= visibleRows) {
+                        return 0;
                     }
+                    
+                    int scrollOffset = Math.round((totalRows - visibleRows) * currentScroll);
+                    AE2CraftingLens.LOGGER.info("getScrollOffset: totalItems={}, columns={}, totalRows={}, visibleRows={}, currentScroll={}, scrollOffset={}", 
+                            totalItems, columns, totalRows, visibleRows, currentScroll, scrollOffset);
+                    
+                    return scrollOffset;
                 }
-            } else {
-                AE2CraftingLens.LOGGER.info("Could not find 'table' field in screen class hierarchy");
             }
         } catch (Exception e) {
-            AE2CraftingLens.LOGGER.info("Error extracting AEKey from table: {}", e.getMessage());
-            e.printStackTrace();
+            AE2CraftingLens.LOGGER.debug("getScrollOffset error: {}", e.getMessage());
         }
-
-        return null;
-    }
-
-    private AEKey extractAEKeyFromObject(Object obj, int rowIndex) {
-        if (obj == null) return null;
-
-        try {
-            String className = obj.getClass().getName();
-            AE2CraftingLens.LOGGER.info("Extracting AEKey from object: {}", className);
-
-            // Special handling for CraftingStatusEntry - direct 'what' field access
-            if (className.contains("CraftingStatusEntry")) {
-                AE2CraftingLens.LOGGER.info("Object is CraftingStatusEntry, trying 'what' field directly");
-                try {
-                    java.lang.reflect.Field whatField = obj.getClass().getDeclaredField("what");
-                    whatField.setAccessible(true);
-                    Object aeKey = whatField.get(obj);
-                    if (aeKey != null) {
-                        AE2CraftingLens.LOGGER.info("=== EXTRACTED AEKey from CraftingStatusEntry.what at row {}: {} ===", rowIndex, aeKey);
-                        return (AEKey) aeKey;
-                    }
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.info("Failed to get 'what' field from CraftingStatusEntry: {}", e.getMessage());
-                }
-            }
-
-            try {
-                java.lang.reflect.Method whatMethod = obj.getClass().getMethod("what");
-                Object aeKey = whatMethod.invoke(obj);
-                if (aeKey != null) {
-                    AE2CraftingLens.LOGGER.info("=== EXTRACTED AEKey via what() at row {}: {} ===", rowIndex, aeKey);
-                    return (AEKey) aeKey;
-                }
-            } catch (Exception e) {
-            }
-
-            try {
-                java.lang.reflect.Method getKeyMethod = obj.getClass().getMethod("getKey");
-                Object aeKey = getKeyMethod.invoke(obj);
-                if (aeKey != null) {
-                    AE2CraftingLens.LOGGER.info("=== EXTRACTED AEKey via getKey() at row {}: {} ===", rowIndex, aeKey);
-                    return (AEKey) aeKey;
-                }
-            } catch (Exception e) {
-            }
-
-            try {
-                java.lang.reflect.Field whatField = obj.getClass().getDeclaredField("what");
-                whatField.setAccessible(true);
-                Object aeKey = whatField.get(obj);
-                if (aeKey != null) {
-                    AE2CraftingLens.LOGGER.info("Extracted AEKey via what field at row {}: {}", rowIndex, aeKey);
-                    return (AEKey) aeKey;
-                }
-            } catch (Exception e) {
-            }
-
-            try {
-                java.lang.reflect.Field keyField = obj.getClass().getDeclaredField("key");
-                keyField.setAccessible(true);
-                Object aeKey = keyField.get(obj);
-                if (aeKey != null) {
-                    AE2CraftingLens.LOGGER.info("Extracted AEKey via key field at row {}: {}", rowIndex, aeKey);
-                    return (AEKey) aeKey;
-                }
-            } catch (Exception e) {
-            }
-
-            for (java.lang.reflect.Field f : obj.getClass().getDeclaredFields()) {
-                f.setAccessible(true);
-                try {
-                    Object val = f.get(obj);
-                    if (val != null) {
-                        String typeName = val.getClass().getName();
-                        if (typeName.contains("AEKey") || typeName.contains("AEItemKey") ||
-                            typeName.contains("GenericStack")) {
-                            AE2CraftingLens.LOGGER.info("Found potential AEKey field '{}' in object", f.getName());
-
-                            if (typeName.contains("GenericStack")) {
-                                java.lang.reflect.Method whatMethod = val.getClass().getMethod("what");
-                                Object aeKey = whatMethod.invoke(val);
-                                if (aeKey != null) {
-                                    AE2CraftingLens.LOGGER.info("Extracted AEKey from nested GenericStack at row {}: {}", rowIndex, aeKey);
-                                    return (AEKey) aeKey;
-                                }
-                            } else {
-                                return (AEKey) val;
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                }
-            }
-
-        } catch (Exception e) {
-            AE2CraftingLens.LOGGER.debug("Error extracting AEKey from object: {}", e.getMessage());
-        }
-
-        return null;
+        return 0;
     }
 
     private boolean isClickOnCraftingItem(Object screen, double mouseX, double mouseY) {
         try {
-            java.lang.reflect.Method getGuiLeftMethod = screen.getClass().getMethod("getGuiLeft");
-            java.lang.reflect.Method getGuiTopMethod = screen.getClass().getMethod("getGuiTop");
-            int guiLeft = (int) getGuiLeftMethod.invoke(screen);
-            int guiTop = (int) getGuiTopMethod.invoke(screen);
+            int guiLeft = getGuiLeft(screen);
+            int guiTop = getGuiTop(screen);
             
             double relativeX = mouseX - guiLeft;
             double relativeY = mouseY - guiTop;
@@ -640,127 +533,40 @@ public class CraftingScreenHandler {
             String screenClassName = screen.getClass().getName();
             boolean isCraftingStatusScreen = screenClassName.contains("CraftingStatusScreen");
             boolean isWCTScreen = screenClassName.contains("WCTScreen") && screenClassName.contains("ae2wtlib");
+            boolean isTerminalScreen = screenClassName.contains("TerminalScreen");
             
-            if (isCraftingStatusScreen || isWCTScreen) {
-                try {
-                    java.lang.reflect.Field renderablesField = screen.getClass().getDeclaredField("renderables");
-                    renderablesField.setAccessible(true);
-                    Iterable<?> renderables = (Iterable<?>) renderablesField.get(screen);
-                    
-                    if (renderables != null) {
-                        for (Object renderable : renderables) {
-                            if (renderable == null) continue;
-                            
-                            String className = renderable.getClass().getName();
-                            
-                            if (className.contains("Slot") || className.contains("Item") || 
-                                className.contains("Crafting") || className.contains("Job") || 
-                                className.contains("Task") || className.contains("Stack") ||
-                                className.contains("Renderable") && className.contains("Crafting")) {
-                                try {
-                                    java.lang.reflect.Method getXMethod = renderable.getClass().getMethod("getX");
-                                    java.lang.reflect.Method getYMethod = renderable.getClass().getMethod("getY");
-                                    java.lang.reflect.Method getWidthMethod = renderable.getClass().getMethod("getWidth");
-                                    java.lang.reflect.Method getHeightMethod = renderable.getClass().getMethod("getHeight");
-                                    int x = (int) getXMethod.invoke(renderable);
-                                    int y = (int) getYMethod.invoke(renderable);
-                                    int width = (int) getWidthMethod.invoke(renderable);
-                                    int height = (int) getHeightMethod.invoke(renderable);
-                                    
-                                    if (relativeX >= x && relativeX < x + width && relativeY >= y && relativeY < y + height) {
-                                        try {
-                                            java.lang.reflect.Method getItemMethod = renderable.getClass().getMethod("getItem");
-                                            Object item = getItemMethod.invoke(renderable);
-                                            if (item != null) {
-                                                AE2CraftingLens.LOGGER.info("Click detected on crafting item slot with item at ({}, {}) size ({}, {})", 
-                                                        x, y, width, height);
-                                                lastClickedAEKey = extractAEKeyFromSlot(renderable);
-                                                return true;
-                                            } else {
-                                                AE2CraftingLens.LOGGER.info("Click on empty slot, skipping");
-                                                return false;
-                                            }
-                                        } catch (Exception e) {
-                                            AE2CraftingLens.LOGGER.info("Click detected on potential crafting item slot at ({}, {}) size ({}, {})", 
-                                                    x, y, width, height);
-                                            lastClickedAEKey = extractAEKeyFromSlot(renderable);
-                                            return true;
-                                        }
-                                    }
-                                } catch (Exception e) {
-                                    AE2CraftingLens.LOGGER.debug("Slot without position info: {}", className);
-                                }
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    AE2CraftingLens.LOGGER.debug("Error inspecting renderables: {}", e.getMessage());
-                }
-            }
-            
-            int itemX, itemY, itemWidth, itemHeight;
+            int tableStartX, tableStartY, tableWidth, tableHeight;
+            boolean isGridMode = isGridMode(screen);
             
             if (isCraftingStatusScreen) {
-                itemX = 9;
-                itemY = 19;
-                itemWidth = 204;
-                itemHeight = 22;
-                AE2CraftingLens.LOGGER.info("Using precise CraftingStatusScreen detection area based on AE2 source code (table area)");
+                tableStartX = 9;
+                tableStartY = 19;
+                tableWidth = 204;
+                tableHeight = isGridMode ? 108 : 115;
             } else if (isWCTScreen) {
-                itemX = 57;
-                itemY = 9;
-                itemWidth = 152;
-                itemHeight = 16;
-                AE2CraftingLens.LOGGER.info("Using adjusted WCTScreen detection area based on click coordinates");
+                tableStartX = 57;
+                tableStartY = 9;
+                tableWidth = 152;
+                tableHeight = isGridMode ? 108 : 90;
+            } else if (isTerminalScreen) {
+                tableStartX = 170;
+                tableStartY = 19;
+                tableWidth = 204;
+                tableHeight = isGridMode ? 108 : 115;
             } else {
-                itemX = 70;
-                itemY = 29;
-                itemWidth = 130;
-                itemHeight = 22;
-                AE2CraftingLens.LOGGER.info("Using default detection area for unknown screen type");
+                tableStartX = 70;
+                tableStartY = 29;
+                tableWidth = 130;
+                tableHeight = isGridMode ? 108 : 90;
             }
             
-            boolean isOnItem = false;
-            int rowHeight = 23;
-            int maxRows = 20;
+            boolean isOnTable = relativeX >= tableStartX && relativeX < tableStartX + tableWidth && 
+                               relativeY >= tableStartY && relativeY < tableStartY + tableHeight;
             
-            float deltaY = (float)(relativeY - itemY);
-            int closestRow = Math.round(deltaY / rowHeight);
+            AE2CraftingLens.LOGGER.info("isClickOnCraftingItem: relativeX={}, relativeY={}, tableStartX={}, tableStartY={}, tableWidth={}, tableHeight={}, result={}", 
+                    relativeX, relativeY, tableStartX, tableStartY, tableWidth, tableHeight, isOnTable);
             
-            if (closestRow < 0) closestRow = 0;
-            if (closestRow >= maxRows) closestRow = maxRows - 1;
-            
-            int startRow = Math.max(0, closestRow - 2);
-            int endRow = Math.min(maxRows - 1, closestRow + 2);
-            
-            AE2CraftingLens.LOGGER.debug("DeltaY: {}, closestRow: {}, checking rows {} to {}", deltaY, closestRow, startRow, endRow);
-            
-            for (int row = startRow; row <= endRow; row++) {
-                int currentItemY = itemY + row * rowHeight;
-                boolean isOnCurrentRow = relativeX >= itemX && relativeX < itemX + itemWidth && 
-                                        relativeY >= currentItemY && relativeY < currentItemY + itemHeight;
-                
-                if (isOnCurrentRow) {
-                    int cellXOffset = (int)(relativeX - itemX);
-                    int cellCol = cellXOffset / 68;
-                    if (cellCol >= 0 && cellCol < 3) {
-                        isOnItem = true;
-                        lastClickedRowIndex = row;
-                        AE2CraftingLens.LOGGER.info("Click detected on crafting item row {}, col {} at y={} (deltaY={})", row, cellCol, currentItemY, deltaY);
-                        break;
-                    }
-                }
-            }
-            
-            if (!isOnItem) {
-                AE2CraftingLens.LOGGER.debug("Click not detected on any crafting row. Details: relativeX={}, relativeY={}, itemX={}, itemY={}, rowHeight={}, deltaY={}, closestRow={}", 
-                        relativeX, relativeY, itemX, itemY, rowHeight, deltaY, closestRow);
-            }
-            
-            AE2CraftingLens.LOGGER.info("Checking crafting item area: GUI({}, {}), relative mouse: ({}, {}), table area: ({}, {}) size ({}, {}), cell size: 67x22, rows checked: {}-{}, result: {}",
-                    guiLeft, guiTop, relativeX, relativeY, itemX, itemY, itemWidth, itemHeight, startRow, endRow, isOnItem);
-            
-            return isOnItem;
+            return isOnTable;
         } catch (Exception e) {
             AE2CraftingLens.LOGGER.debug("Error checking crafting item click: {}", e.getMessage());
             return false;
@@ -768,6 +574,7 @@ public class CraftingScreenHandler {
     }
 
     private java.lang.reflect.Field findFieldInHierarchy(Class<?> clazz, String fieldName) {
+        if (fieldName == null) return null;
         while (clazz != null && !clazz.equals(Object.class)) {
             try {
                 return clazz.getDeclaredField(fieldName);
